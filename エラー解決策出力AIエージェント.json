@@ -1,0 +1,355 @@
+{
+  "name": "エラー解決策出力AIエージェント",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "anomaly-alert",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -16,
+        -64
+      ],
+      "id": "f1172638-2753-460f-931f-ba087376ef7b",
+      "name": "Webhook",
+      "webhookId": "50bd837e-677d-49f9-aa32-477358f3b59a"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3d46c0e0-f569-4a3d-8cb5-13d69713dcee",
+              "name": "anomalyData",
+              "value": "={{ $json.body ?? $json }}",
+              "type": "object"
+            },
+            {
+              "id": "d3f74c7a-97f7-4439-a064-119f581c7ae6",
+              "name": "timestamp",
+              "value": "={{new Date().toISOString()}}",
+              "type": "string"
+            },
+            {
+              "id": "50e80e8f-1cf2-4f31-af5e-93ed250b0d5e",
+              "name": "alertLevel",
+              "value": "={{$json.body.severity || 'medium'}}",
+              "type": "string"
+            },
+            {
+              "id": "b72c8349-d9fd-4715-9978-882f67d3b547",
+              "name": "eventName",
+              "value": "={{$json.body.name || 'unknown-event'}}",
+              "type": "string"
+            },
+            {
+              "id": "f70dc3d8-9e5e-4f26-9b83-8893a50128aa",
+              "name": "message",
+              "value": "={{$json.body.message || $json.body.name || 'anomaly detected'}}",
+              "type": "string"
+            },
+            {
+              "id": "c1d0a4d6-699c-4c82-ab2e-86f956bc35e1",
+              "name": "systemId",
+              "value": "={{$json.body.systemId || 'ixacs-simulator'}}",
+              "type": "string"
+            },
+            {
+              "id": "07f7222c-74ae-4240-ae76-9aebe1e9c068",
+              "name": "sessionId",
+              "value": "={{ ($json.body.systemId || 'ixacs-simulator') + '-' + ($json.body.name || 'unknown-event') }}",
+              "type": "string"
+            },
+            {
+              "id": "0dec7db3-c2ce-46b2-9837-31a74422d80b",
+              "name": "sessionId",
+              "value": "=={{$json.body?.sessionId \n || ($json.body?.systemId ? $json.body.systemId : 'ixacs')\n + '-' \n + ($json.body?.eventName ? $json.body.eventName : ($json.body?.name ? $json.body.name : 'unknown'))}}\n",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        -64
+      ],
+      "id": "172c3004-4d44-4b18-b3c5-903c9a983427",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "url": "https://script.google.com/macros/s/AKfycbxos3o9CuTdCCdV-d2wCVuDg6C9sgl5osWjv7-mxvemVJOBXvrWyvAFNHbYgIoCdu2G4g/exec",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "snapshot"
+            },
+            {
+              "name": "token",
+              "value": "CHANGE_ME_TOKEN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        432,
+        -64
+      ],
+      "id": "0633961d-c277-4aa1-a01e-350ee43d5946",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "71bd5058-9681-4f75-ba8c-81d6fe901676",
+              "name": "llm_system",
+              "value": "=あなたは工場設備の保全担当AI。\n入力の監視値(JSON)と、復旧マニュアル（外部ナレッジ）を根拠に、\n原因仮説・優先度、直ちにやる確認、対処手順を日本語で出力する。\n\n【最重要ルール（RAG）】\n- 回答前に必ず「復旧マニュアル検索ツール（HTTP Request / GAS）」を使って関連マニュアルを取得すること。\n- 検索語(q)は、入力JSON内の eventName → message → systemId の順で優先して選ぶ。\n- 取得したマニュアルが空/該当なしの場合のみ、監視値(JSON)からの一般推定で補完する（その旨を明記）。\n\n【ツールの使い方（前提）】\n- ツールに渡す action は \"manual\"。\n- q は上記優先順位で抽出したキーワード（例：ベルトコンベアの滑り）。\n- 返ってきたマニュアルは「根拠」として引用し、手順はできるだけマニュアル準拠で書く。\n\n【安全・品質ルール】\n- 安全確保（停止/ロックアウト/接触禁止など）の注意を、必要な場合は最初に短く入れる。\n- 監視値から明らかに危険（温度・電流・振動・負荷が高い等）なら、重要度判定は厳しめにする。\n- 数値や状態に基づく理由を、各セクションで一言で添える（例：「motorTempが80℃と高い」）。\n- 不確実な推定は断定せず「可能性」として書く。\n\n【出力形式（固定）】\n1) 重要度判定（OK/WARN/ALARM）\n   - 判定理由（監視値 + マニュアル根拠を1〜2行）\n\n2) 想定原因（優先度順に3つ）\n   - 各原因：根拠（監視値の該当項目 / マニュアルの該当記述）を1行で添える\n\n3) 5分以内の確認（5つ）\n   - すぐ現場で確認できるものを優先（目視/異音/テンション/詰まり/センサー異常など）\n   - 各項目に「OKなら次」「NGなら次」を短く添える\n\n4) 15分以内の対処（箇条書き）\n   - マニュアル手順がある場合は最優先で順番通りに書く\n   - 手順ごとに「目的/狙い」を一言添える\n\n5) 追加で欲しいデータ\n   - 原因の切り分け精度が上がる追加データを、優先順に列挙\n\n【入力JSONの扱い】\n- 入力は欠損している可能性がある。欠損項目は N/A として扱い、追加データに回す。\n- eventName/message/systemId/timestamp があれば必ず出力にも反映する（冒頭または判定理由内）。\n\n【禁止】\n- マニュアルを参照せずに断定的な復旧手順を書くこと（マニュアル取得失敗時を除く）。\n",
+              "type": "string"
+            },
+            {
+              "id": "69b75579-65be-4288-ad2c-2964ee616889",
+              "name": "llm_user",
+              "value": "=={{ \"【アラート】\\n\" +\"eventName: \" + ($json.eventName || \"N/A\") + \"\\n\" +\"alertLevel: \" + ($json.alertLevel || \"N/A\") + \"\\n\" +\"message: \" + ($json.message || \"N/A\") + \"\\n\" +\"systemId: \" + ($json.systemId || \"N/A\") + \"\\n\" +\"timestamp: \" + ($json.timestamp || \"N/A\") + \"\\n\\n\" +\"【監視スナップショット(JSON)】\\n\" +JSON.stringify($json.data || {}, null, 2)}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        -64
+      ],
+      "id": "257b43cd-b4f7-430e-ba4e-8b989570bc61",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.llm_user }}",
+        "options": {
+          "systemMessage": "=You are a helpful assistant {{ $json.llm_system }}\n\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        936,
+        -64
+      ],
+      "id": "1b89b9db-916f-4564-8863-1ebcac9cfcbc",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        880,
+        160
+      ],
+      "id": "47577aa8-0e7d-48cf-85aa-6c37502b7624",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "QXIFAQZ6mDbEcdAt",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Edit Fields').item.json.sessionId }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1008,
+        160
+      ],
+      "id": "c0a74830-4542-40b9-b16b-1e676f9a8212",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "url": "https://script.google.com/macros/s/AKfycbw0-Yyva-ZSvDFORBiklEgw7oOHFB0WG-7l7Xi-uywnjfQMvWsQZiJ2Z1g9YyS2Mn02pQ/exec",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "manual"
+            },
+            {
+              "name": "q",
+              "value": "={{ $('Edit Fields').item.json.eventName }}"
+            },
+            {
+              "name": "token",
+              "value": "実トークン"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        1136,
+        160
+      ],
+      "id": "15a745bf-30c2-49b4-8407-4b455b83d844",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "D0A67KP7HN3",
+          "mode": "id"
+        },
+        "text": "=={{ \"```\" + $node[\"AI Agent\"].json.output + \"```\" }}\n",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1344,
+        -64
+      ],
+      "id": "13a07fcd-2b32-4838-b73f-715c64d3ea63",
+      "name": "Send a message",
+      "webhookId": "fc37e397-4c18-4919-9bdd-d6aca2f07511",
+      "credentials": {
+        "slackApi": {
+          "id": "H3sKJ4SKxro2hmdd",
+          "name": "Slack account 3"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "92151e44-d016-4d5f-870c-81667d7cb6d8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3525ee60a254a38ad79a2d3b02e42655faf4540f5f897db79b6e67f8bd2483cf"
+  },
+  "id": "06dkLnsOm7CWsNde",
+  "tags": []
+}

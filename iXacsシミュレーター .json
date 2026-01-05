@@ -1,0 +1,70 @@
+{
+  "name": "iXacsシミュレーター",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "4eed9e75-768f-48e2-8e56-b6be6597411d",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook-test/anomaly-alert",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "ベルトコンベアの滑り"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "8d01c3bb-54c3-4df7-a80c-61498dfff30a",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "67d5e2c4-9568-404f-b967-6dbf2f5235ce",
+  "meta": {
+    "instanceId": "3525ee60a254a38ad79a2d3b02e42655faf4540f5f897db79b6e67f8bd2483cf"
+  },
+  "id": "1JlCVGUMzI61P6oL",
+  "tags": []
+}
