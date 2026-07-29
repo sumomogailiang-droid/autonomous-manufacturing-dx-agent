@@ -65,11 +65,13 @@ const run = async () => {
   /* tools/list */
   const tools = await rpc('tools/list', {});
   const names = (tools.result?.tools || []).map((t) => t.name);
-  check("tools/list が13ツールを返す", names.length === 13, `${names.length}件: ${names.join(', ')}`);
+  check("tools/list が16ツールを返す", names.length === 16, `${names.length}件: ${names.join(', ')}`);
   for (const expected of [
     'manual_search', 'get_process', 'get_numeric_standards', 'check_notation',
     'get_checklist', 'get_template', 'list_conflicts', 'get_accident_map',
-    'get_design_rules', 'format_telop', 'governance_audit', 'list_projects', 'get_project_rules'
+    'get_design_rules', 'format_telop', 'governance_audit',
+    'list_agents', 'get_agent_role', 'handoff',
+    'list_projects', 'get_project_rules'
   ]) {
     check(`ツール ${expected} が存在する`, names.includes(expected));
   }
@@ -176,6 +178,53 @@ const run = async () => {
     .map((m) => Number(/\| \d+ \| (\d+) \|/.exec(m)[1]))
     .filter((n) => n > 18);
   check('format_telop の全行が18文字以内', over.length === 0, `超過: ${over.join(',')}`);
+
+  /* 役割の共有（Codex連携の要） */
+  const ag = await rpc('tools/call', { name: 'list_agents', arguments: {} });
+  const agb = bodyOf(ag);
+  check('list_agents が6役割を返す', /制作チームの役割（6体）/.test(agb), agb.slice(0, 40));
+  for (const role of ['common-manual', 'project-manual', 'director', 'cto', 'design', 'telop']) {
+    check(`役割 ${role} が一覧にある`, agb.includes('## ' + role));
+  }
+
+  const roleTelop = await rpc('tools/call', { name: 'get_agent_role', arguments: { name: 'telop' } });
+  const rt = bodyOf(roleTelop);
+  check('get_agent_role が本文を返す', rt.includes('フレームずれを出さないこと'), rt.slice(0, 50));
+  check('役割定義に共通制約が付く', rt.includes('担当外の判断は handoff で渡す'));
+  check('役割定義が「書き換えない」を含む', rt.includes('回してます'));
+
+  const roleDesign = await rpc('tools/call', { name: 'get_agent_role', arguments: { name: 'design' } });
+  const rd = bodyOf(roleDesign);
+  check('design役割が画像生成不可を明示', rd.includes('Claude Code は画像を生成できません'));
+  check('design役割が3色以内を含む', rd.includes('3色以内'));
+
+  const roleBad = await rpc('tools/call', { name: 'get_agent_role', arguments: { name: 'no-such-role' } });
+  check('未知の役割で使える役割を案内する',
+    bodyOf(roleBad).includes('使える役割'), bodyOf(roleBad).slice(0, 60));
+
+  const roleTraversal = await rpc('tools/call', { name: 'get_agent_role', arguments: { name: '../../etc/passwd' } });
+  check('役割名のパス遡りを拒否する', roleTraversal.result?.isError === true);
+
+  const hoff = await rpc('tools/call', {
+    name: 'handoff',
+    arguments: {
+      to: 'director', from: 'telop',
+      what: '演出頻度を6秒と10秒のどちらにするか',
+      why: '共通マニュアルで未決定のため',
+      evidence: '演出・よくあるミス: 6秒に1回 / 提出前チェック: 10秒に1回'
+    }
+  });
+  const hb = bodyOf(hoff);
+  check('handoff が引き継ぎメモを作る', hb.includes('# 引き継ぎ'));
+  check('handoff が渡す先の役割定義を含む', hb.includes('director の役割定義'));
+  check('handoff が根拠を含む', hb.includes('6秒に1回'));
+  check('handoff が裏取りを促す', hb.includes('裏取り'));
+
+  const hoffNoEv = await rpc('tools/call', {
+    name: 'handoff', arguments: { to: 'cto', what: 'x', why: 'y' }
+  });
+  check('根拠なしのhandoffで警告する',
+    bodyOf(hoffNoEv).includes('根拠なしで渡さないでください'));
 
   /* projects */
   const lp = await rpc('tools/call', { name: 'list_projects', arguments: {} });

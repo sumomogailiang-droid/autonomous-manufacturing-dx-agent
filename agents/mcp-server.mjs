@@ -28,6 +28,7 @@ const ROOT = resolve(__dirname, '..');
 const DATA = require(resolve(ROOT, 'video-manual-visualizer/manual-data.js'));
 const KNOWLEDGE = resolve(__dirname, 'knowledge/common-manual.md');
 const PROJECTS_DIR = resolve(__dirname, 'knowledge/projects');
+const ROLES_DIR = resolve(ROOT, '.claude/agents');
 
 const SERVER_INFO = { name: 'video-manual', version: '1.0.0' };
 const PROTOCOL_VERSION = '2024-11-05';
@@ -74,6 +75,46 @@ function loadProject(projectId) {
 
 function text(s) {
   return { content: [{ type: 'text', text: s }] };
+}
+
+/*
+ * 制作チームの役割定義は .claude/agents/*.md を唯一の定義元とする。
+ * Claude Code はこれをサブエージェントとして直接読み、
+ * Codex など他のクライアントは MCP 経由で同じ内容を受け取る。
+ * 定義を二重に持たないため、片方だけが古くなることがない。
+ */
+function listRoleFiles() {
+  if (!existsSync(ROLES_DIR)) return [];
+  return readdirSync(ROLES_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => basename(f, '.md'))
+    .sort();
+}
+
+function loadRole(name) {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(String(name || ''))) {
+    throw new Error(`役割名の形式が正しくありません: ${name}`);
+  }
+  const p = resolve(ROLES_DIR, `${name}.md`);
+  if (!p.startsWith(ROLES_DIR)) throw new Error('不正な役割名です。');
+  if (!existsSync(p)) {
+    throw new Error(
+      `役割が見つかりません: ${name}\n` +
+      `使える役割: ${listRoleFiles().join(', ')}`
+    );
+  }
+  const raw = readFileSync(p, 'utf8');
+
+  /* frontmatter を分離する */
+  const m = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw);
+  if (!m) return { name, description: '', body: raw.trim() };
+
+  const meta = {};
+  for (const line of m[1].split('\n')) {
+    const kv = /^([a-zA-Z_]+):\s*(.*)$/.exec(line);
+    if (kv) meta[kv[1]] = kv[2].trim();
+  }
+  return { name, description: meta.description || '', tools: meta.tools || '', body: m[2].trim() };
 }
 
 /* 見出し単位でMarkdownを分割 */
@@ -244,6 +285,49 @@ const TOOLS = [
       properties: {
         only_failures: { type: 'boolean', description: '失敗した項目だけ返す（既定false）', default: false }
       }
+    }
+  },
+  {
+    name: 'list_agents',
+    description:
+      '制作チームの役割一覧を返す。どの役割に任せるか決めるとき、' +
+      '自分の担当外の判断を渡す先を探すときに使う。' +
+      'Codexなどサブエージェント機能を持たないクライアントは、これで役割を選び get_agent_role で読み込む。',
+    inputSchema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'get_agent_role',
+    description:
+      '指定した役割の定義を全文で返す。返ってきた内容を自分の指示として読み込み、' +
+      'その役割として振る舞うこと。Claude Code のサブエージェントと同じ定義を使うため、' +
+      '実行環境が違っても判断が食い違わない。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: '役割名。common-manual / project-manual / director / cto / design / telop'
+        }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'handoff',
+    description:
+      '担当外の判断を他の役割へ渡すための引き継ぎメモを作る。' +
+      '「何を・なぜ・どの根拠で」を揃えた形式で出力し、渡す先の役割定義も併せて返す。' +
+      '担当外の判断を自分で抱え込まないこと。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', description: '渡す先の役割名' },
+        what: { type: 'string', description: '何を判断してほしいか' },
+        why: { type: 'string', description: 'なぜ自分では決められないか' },
+        evidence: { type: 'string', description: '根拠（マニュアルの該当箇所・数値・検出した事象）' },
+        from: { type: 'string', description: '渡す側の役割名（省略可）' }
+      },
+      required: ['to', 'what', 'why']
     }
   },
   {
@@ -810,6 +894,95 @@ const HANDLERS = {
     lines.push('> 未解決の矛盾（演出頻度・提出方法）は「解決されていること」ではなく');
     lines.push('> 「正しく表示されていること」を検査しています。独断で解決しないでください。');
 
+    return text(lines.join('\n'));
+  },
+
+  list_agents() {
+    const names = listRoleFiles();
+    if (!names.length) {
+      return text('役割定義が見つかりません（.claude/agents/*.md）。');
+    }
+    const lines = [
+      '# 制作チームの役割（' + names.length + '体）',
+      '',
+      'get_agent_role で定義を読み込み、その役割として振る舞ってください。',
+      ''
+    ];
+    for (const n of names) {
+      const r = loadRole(n);
+      lines.push(`## ${n}`, '', r.description || '（説明なし）', '');
+    }
+    lines.push('---', '');
+    lines.push('担当外の判断は抱え込まず、handoff で渡してください。');
+    lines.push('');
+    lines.push('CTOは制作チームの外から監査・裁定を行います。');
+    lines.push('演出頻度と提出方法の確定はディレクターの権限です。');
+    return text(lines.join('\n'));
+  },
+
+  get_agent_role({ name }) {
+    const r = loadRole(name);
+    const lines = [
+      `# 役割: ${r.name}`,
+      ''
+    ];
+    if (r.description) lines.push(`**担当**: ${r.description}`, '');
+    lines.push(
+      '以下をあなたの指示として読み込み、この役割として振る舞ってください。',
+      'この定義は Claude Code のサブエージェントと同一です。',
+      '',
+      '---',
+      '',
+      r.body,
+      '',
+      '---',
+      '',
+      '## 共通の制約（全役割に適用）',
+      '',
+      '- 知識ベースにないことを推測で補わない',
+      '- URLを推測しない（原本で5件欠損している）',
+      '- 数字・単位・条件を変更しない',
+      '- 改善候補を正式ルールとして出さない',
+      '- 演出頻度（6秒/10秒）と提出方法（Frame.io/限定公開）の矛盾を独断で解決しない',
+      '- 担当外の判断は handoff で渡す'
+    );
+    return text(lines.join('\n'));
+  },
+
+  handoff({ to, what, why, evidence, from }) {
+    const target = loadRole(to);
+    const lines = [
+      '# 引き継ぎ',
+      '',
+      `**渡す先**: ${to}${from ? `　**渡す側**: ${from}` : ''}`,
+      '',
+      '## 何を判断してほしいか',
+      '',
+      what,
+      '',
+      '## なぜ自分では決められないか',
+      '',
+      why,
+      ''
+    ];
+    if (evidence) {
+      lines.push('## 根拠', '', evidence, '');
+    } else {
+      lines.push('## 根拠', '', '（未記入）根拠なしで渡さないでください。該当するマニュアルの箇所を示してください。', '');
+    }
+    lines.push(
+      '---',
+      '',
+      `## ${to} の役割定義`,
+      '',
+      target.description || '',
+      '',
+      target.body,
+      '',
+      '---',
+      '',
+      '受け取った側は、上の根拠をMCPツールで裏取りしてから判断してください。'
+    );
     return text(lines.join('\n'));
   },
 

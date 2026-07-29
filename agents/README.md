@@ -10,7 +10,7 @@ video-manual-visualizer/manual-data.js   ★ 唯一の情報源
                  ├─ build-knowledge.mjs ──→ knowledge/common-manual.md
                  │                            （共通マニュアル知識ベース 47KB）
                  │
-                 └─ mcp-server.mjs ─────→ MCPサーバー（12ツール）
+                 └─ mcp-server.mjs ─────→ MCPサーバー（16ツール）
                                             │
                     案件マニュアル ──────────┤
                     generate-project-agent   │
@@ -51,10 +51,28 @@ node agents/test-mcp.mjs
 
 サブエージェントも使えます。
 
-| エージェント | 用途 |
-|---|---|
-| `common-manual` | 共通マニュアルに基づく素材確認・提出前チェック・ルール照会 |
-| `project-manual` | 案件独自ルールを共通マニュアルへ上書きして判断 |
+| エージェント | 用途 | 主な実行環境 |
+|---|---|---|
+| `common-manual` | 共通ルールの判定・素材確認・提出前チェック | Claude Code |
+| `project-manual` | 案件独自ルールを共通へ上書きして判断 | Claude Code |
+| `director` | 編集品質の採点・提出可否・矛盾の方針決定 | Claude Code |
+| `cto` | 全体監査・GO/NO-GO判定・裁定 | Claude Code |
+| `design` | 図解・画像の生成 | **Codex** |
+| `telop` | 文字起こし→テロップ | **Codex** |
+
+### 役割定義の共有
+
+役割定義は `.claude/agents/*.md` の1箇所だけにあります。
+
+```
+.claude/agents/*.md   ← 唯一の定義元
+   │
+   ├─ Claude Code : サブエージェントとして直接読む
+   └─ Codex       : MCP の get_agent_role で受け取る
+```
+
+MCPサーバーはこのディレクトリを直接読むため、コピーは存在しません。
+片方だけが古くなることがない構造です。ガバナンス監査の C5-13 で検査しています。
 
 ### Codex CLI から接続
 
@@ -78,7 +96,7 @@ stdio / JSON-RPC 2.0 の標準的なMCPサーバーです。外部依存はあ�
 node agents/mcp-server.mjs
 ```
 
-## MCPツール一覧（12個）
+## MCPツール一覧（16個）
 
 | ツール | 内容 |
 |---|---|
@@ -92,6 +110,9 @@ node agents/mcp-server.mjs
 | `get_accident_map` | 事故防止16件（原因→事故→防止策→最終確認） |
 | `get_design_rules` | 図解・画像・テロップの制作ルール。**画像生成前に必須** |
 | `format_telop` | 文字起こし → テロップ行へ整形（文章は書き換えない） |
+| `list_agents` | 制作チームの役割一覧（Codexが役割を選ぶのに使う） |
+| `get_agent_role` | 役割定義を全文で返す（Codexのサブエージェント代替） |
+| `handoff` | 担当外の判断を他の役割へ渡す引き継ぎメモを作る |
 | `list_projects` | 登録済み案件一覧と未確定件数 |
 | `get_project_rules` | 案件マニュアル取得 |
 
@@ -130,7 +151,8 @@ node agents/generate-project-agent.mjs <案件マニュアルのパス> <案件I
 
 ```bash
 node video-manual-visualizer/validate-data.js   # データ検証 181項目
-node agents/test-mcp.mjs                        # MCP疎通テスト 53項目
+node agents/test-mcp.mjs                        # MCP疎通テスト 79項目
+node agents/governance.mjs                      # CTOによる全体監査 48項目（GO / NO-GO）
 
 # 詳細表示
 VERBOSE=1 node agents/test-mcp.mjs

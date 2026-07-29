@@ -43,6 +43,42 @@ agents/
 **制作チーム** の6メンバーはお互いに連携できます。担当外の判断は抱え込まず、担当メンバーへ渡してください。
 渡すときは「何を・なぜ・どの根拠で」を明示し、受け取った側はMCPツールで裏を取ります。
 
+### 役割は Claude Code と Codex で共通
+
+役割定義は `.claude/agents/*.md` の**1箇所だけ**にあります。
+Claude Code はサブエージェントとして直接読み、**Codex は MCP 経由で同じ定義を受け取ります**。
+定義のコピーを作らないでください。片方だけが古くなり、判断が食い違います。
+
+| 役割 | 担当 | 主な実行環境 |
+|---|---|---|
+| `common-manual` | 共通ルールの判定・素材確認・提出前チェック | Claude Code |
+| `project-manual` | 案件ルールの上書き判断 | Claude Code |
+| `director` | 編集品質の採点・提出可否・矛盾の方針決定 | Claude Code |
+| `cto` | 全体監査・GO/NO-GO判定・裁定 | Claude Code |
+| `design` | 図解・画像の生成 | **Codex** |
+| `telop` | 文字起こし→テロップ | **Codex** |
+
+### Codex から役割を使う
+
+Codex にはサブエージェント機能がないため、MCPツールで役割を読み込みます。
+
+```
+1. list_agents          … どの役割があるか見る
+2. get_agent_role(name) … 定義を読み込み、その役割として振る舞う
+3. handoff(to, what, why, evidence) … 担当外を他の役割へ渡す
+```
+
+例: Codex で図解を作るとき
+
+```
+get_agent_role("design")    → 制約と完了条件を読み込む
+get_design_rules()          → 数値の制約を引く
+（図解を生成）
+handoff("director", ...)    → 演出頻度の判断が要るなら渡す
+```
+
+**担当外の判断を自分で決めないでください。** `handoff` は根拠が空だと警告を出します。
+
 ## 実行環境の役割分担
 
 | | 担当 | 理由 |
@@ -105,6 +141,9 @@ Claude Codeは画像を作れませんが、「この場面は和やかだから
 | `get_design_rules` | 図解・画像・テロップの制作ルール | **Codex（生成前に必須）** |
 | `format_telop` | 文字起こし → テロップ行へ整形 | **Codex** |
 | `governance_audit` | 全体を監査してGO/NO-GOを返す | **CTO** |
+| `list_agents` | 制作チームの役割一覧 | **Codex（役割の選択）** |
+| `get_agent_role` | 役割定義を読み込む | **Codex（サブエージェント代替）** |
+| `handoff` | 担当外の判断を他の役割へ渡す | 両方 |
 | `list_projects` | 登録済み案件一覧 | 両方 |
 | `get_project_rules` | 案件マニュアル取得 | 両方 |
 

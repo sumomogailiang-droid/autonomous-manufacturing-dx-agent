@@ -371,8 +371,8 @@ const mcpSrc = read('agents/mcp-server.mjs');
 const toolCount = mcpSrc ? (mcpSrc.match(/^\s{4}name:\s*'/gm) || []).length : 0;
 record({
   id: 'C5-07', category: CAT5, severity: 'warn',
-  name: 'MCPサーバーが13ツール以上を提供している',
-  pass: toolCount >= 13,
+  name: 'MCPサーバーが16ツール以上を提供している',
+  pass: toolCount >= 16,
   detail: `${toolCount}ツール`,
   action: 'agents/mcp-server.mjs の TOOLS を確認してください'
 });
@@ -575,6 +575,56 @@ if (TCU) {
   });
 }
 
+/*
+ * 制作チームの役割が Codex からも使えるか。
+ * .claude/agents/*.md を唯一の定義元とし、MCP経由で配る設計になっているか検査する。
+ */
+const roleDir = resolve(ROOT, '.claude/agents');
+const roleFiles = existsSync(roleDir)
+  ? readdirSync(roleDir).filter((f) => f.endsWith('.md')).map((f) => f.replace('.md', ''))
+  : [];
+const REQUIRED_ROLES = ['common-manual', 'project-manual', 'director', 'cto', 'design', 'telop'];
+const missingRoles = REQUIRED_ROLES.filter((r) => !roleFiles.includes(r));
+
+record({
+  id: 'C5-11', category: CAT5, severity: 'blocker',
+  name: '制作チームの役割定義が6体そろっている',
+  pass: missingRoles.length === 0,
+  detail: missingRoles.length ? `不足: ${missingRoles.join(', ')}` : roleFiles.join(', '),
+  action: '.claude/agents/ に不足している役割定義を追加してください'
+});
+
+/* mcpSrc は上で読み込んだものを再利用する */
+record({
+  id: 'C5-12', category: CAT5, severity: 'blocker',
+  name: '役割定義がMCP経由でCodexへ配られる',
+  pass: /list_agents/.test(mcpSrc) && /get_agent_role/.test(mcpSrc) && /handoff/.test(mcpSrc),
+  detail: 'list_agents / get_agent_role / handoff',
+  action: 'MCPサーバーに役割共有ツールを追加してください。Codexはサブエージェント機能を持ちません'
+});
+
+record({
+  id: 'C5-13', category: CAT5, severity: 'blocker',
+  name: '役割定義を二重に持っていない',
+  pass: /ROLES_DIR = resolve\(ROOT, '\.claude\/agents'\)/.test(mcpSrc),
+  detail: 'MCPは .claude/agents を直接読む（コピーを持たない）',
+  action: '役割定義のコピーを作らないでください。片方だけが古くなります'
+});
+
+/* 全役割に description があるか（Codex側で選ぶ手がかりになる） */
+const noDesc = [];
+for (const r of roleFiles) {
+  const t = read(`.claude/agents/${r}.md`);
+  if (!/^description:\s*\S/m.test(t)) noDesc.push(r);
+}
+record({
+  id: 'C5-14', category: CAT5, severity: 'warn',
+  name: '全役割に description がある',
+  pass: noDesc.length === 0,
+  detail: noDesc.length ? `不足: ${noDesc.join(', ')}` : `${roleFiles.length}件すべてあり`,
+  action: 'description がないと、どの役割へ渡すか判断できません'
+});
+
 /* Premiere API の未検証を隠していないか */
 const adapterSrc = read('uxp-plugin/adapter.js');
 record({
@@ -599,6 +649,50 @@ record({
 /* ================================================================== */
 /* 判定                                                               */
 /* ================================================================== */
+
+/* ------------------------------------------------------------------ */
+/* C0. 監査自体の健全性                                                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * 検査IDが重複していると、結果が混ざって見落としが起きる。
+ * 実際に C5-07 / C5-08 を二重に使う取りこぼしがあったため、機械的に防ぐ。
+ */
+const idCounts = {};
+for (const c of checks) idCounts[c.id] = (idCounts[c.id] || 0) + 1;
+const dupIds = Object.keys(idCounts).filter((k) => idCounts[k] > 1);
+
+record({
+  id: 'C0-01', category: 'C0. 監査自体の健全性', severity: 'blocker',
+  name: '検査IDが重複していない',
+  pass: dupIds.length === 0,
+  detail: dupIds.length ? `重複: ${dupIds.join(', ')}` : `${checks.length}件すべて一意`,
+  action: '重複したIDを振り直してください'
+});
+
+/*
+ * ドキュメントに書いた件数が、実態とずれていないか。
+ * 数字が古いまま放置されると、読んだ人が誤った前提で動く。
+ */
+const readmeSrc = read('agents/README.md') || '';
+const docToolCount = Number((/MCPツール一覧（(\d+)個）/.exec(readmeSrc) || [])[1] || 0);
+record({
+  id: 'C0-03', category: 'C0. 監査自体の健全性', severity: 'warn',
+  name: 'READMEのツール数が実態と一致している',
+  pass: docToolCount === toolCount,
+  detail: `README ${docToolCount}個 / 実装 ${toolCount}個`,
+  action: 'agents/README.md のツール数を更新してください'
+});
+
+/* 全検査に action がある（落ちたときに何をすればよいか分かるように） */
+const noAction = checks.filter((c) => !c.action);
+record({
+  id: 'C0-02', category: 'C0. 監査自体の健全性', severity: 'warn',
+  name: '全検査に対処方法が書かれている',
+  pass: noAction.length === 0,
+  detail: noAction.length ? `不足: ${noAction.map((c) => c.id).join(', ')}` : `${checks.length}件すべてあり`,
+  action: '落ちたときに何をすればよいか分からない検査は、直しようがありません'
+});
 
 const failed = checks.filter((c) => !c.pass);
 const blockers = failed.filter((c) => c.severity === 'blocker');
