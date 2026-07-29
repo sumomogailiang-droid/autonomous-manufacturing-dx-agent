@@ -21,7 +21,7 @@
 
   const adapter = globalThis.PremiereAdapter;
   const T = globalThis.TelopUtils || {};
-  const { formatTelop, parseSubtitles, formatSubtitles, toSrt, checkNotation } = T;
+  const { formatTelop, parseSubtitles, parseTimedText, formatSubtitles, toSrt, checkNotation } = T;
   const TC = globalThis.TimecodeUtils;
   const DATA = globalThis.MANUAL_SNAPSHOT;
 
@@ -304,16 +304,28 @@ function buildTelopPanel() {
 
   /* ---------------- 入力 ---------------- */
 
+  const fmtHelp = el('div', 'help');
+  add(fmtHelp,
+    el('strong', null, '貼り付けできる形式'),
+    el('p', null, '次のどれでもそのまま貼れます。変換は不要です。'),
+    el('p', null, '① [00:02:51.430 → 00:02:54.990]  本文　（角括弧・矢印つき）'),
+    el('p', null, '② 00:02:51.430 --> 00:02:54.990  本文　（括弧なし）'),
+    el('p', null, '③ SRT / VTT ファイルの中身'),
+    el('p', null, '④ 00:02:51:15  本文　（開始だけ。次の行の開始まで表示します）')
+  );
+
   const card = el('div', 'card');
+  card.appendChild(fmtHelp);
 
   const inLabel = el('label', 'field');
-  add(inLabel, el('span', null, 'タイムコード付き文字起こし（SRT / VTT / 「TC テキスト」形式）'));
+  add(inLabel, el('span', null, 'タイムコード付き文字起こし（そのまま貼れます）'));
   const ta = el('textarea');
   attr(ta, {
     id: 'telop-in',
     placeholder:
-      '1\n00:00:01,000 --> 00:00:03,500\n今日はですね、動画編集の基本的な流れについて解説していきます\n\n' +
-      '2\n00:00:03,500 --> 00:00:06,000\nまず最初にやることは素材確認です'
+      '[00:02:51.430 → 00:02:54.990]   そのタイミングで、近くにいた人に声かけてた\n' +
+      '[00:02:56.590 → 00:02:58.650]   まあ、「空いてる方おいで」って感じで\n\n' +
+      'SRT形式でも貼れます'
   });
   inLabel.appendChild(ta);
   card.appendChild(inLabel);
@@ -464,13 +476,25 @@ function buildTelopPanel() {
 
   /** 入力を {start,end,text} の配列へ。秒単位。 */
   function parseInput(raw, rate) {
+    const toSec = (tc) => TC.framesToSeconds(TC.timecodeToFrames(tc, rate), rate);
+
+    /* 形式1: SRT / VTT（タイムコード行と本文行が分かれている） */
     const blocks = parseSubtitles(raw);
     if (blocks.length) {
       return blocks.map((b) => ({
-        start: TC.framesToSeconds(TC.timecodeToFrames(b.start, rate), rate),
-        end: TC.framesToSeconds(TC.timecodeToFrames(b.end, rate), rate),
-        text: b.text,
-        sourceIndex: b.index
+        start: toSec(b.start), end: toSec(b.end), text: b.text, sourceIndex: b.index
+      }));
+    }
+
+    /*
+     * 形式2: 開始TC〜終了TCと本文が1行に並ぶ形式。
+     * 例) [00:02:51.430 → 00:02:54.990]   テキスト
+     * 文字起こしツールがよく出す形式なので、そのまま貼れるようにしている。
+     */
+    const timed = parseTimedText(raw);
+    if (timed.length) {
+      return timed.map((b) => ({
+        start: toSec(b.start), end: toSec(b.end), text: b.text, sourceIndex: b.index
       }));
     }
 
@@ -511,7 +535,7 @@ function buildTelopPanel() {
 
     const parsed = parseInput(raw, rate);
     if (!parsed.length) {
-      toast('タイムコードを読み取れませんでした。SRT形式か「TC テキスト」形式で貼ってください');
+      toast('タイムコードを読み取れませんでした。上の「貼り付けできる形式」を確認してください');
       return null;
     }
 

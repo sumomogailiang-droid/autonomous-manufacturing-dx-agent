@@ -170,6 +170,89 @@ function parseSubtitles(src) {
 }
 
 /**
+ * 「開始TC 〜 終了TC  本文」が1行に並ぶ形式を読み取る。
+ *
+ * 文字起こしツール（Whisper系など）がよく出す形式に対応する:
+ *   [00:02:51.430 → 00:02:54.990]   そのタイミングで、近くにいた人に声かけてた
+ *   [00:02:51.430 --> 00:02:54.990] テキスト
+ *   00:02:51.430 → 00:02:54.990  テキスト
+ *   00:02:51,430 --> 00:02:54,990 テキスト
+ *
+ * 角括弧の有無、矢印の種類（→ / -> / --> / 〜 など）、
+ * 区切りの半角/全角スペースを問わず読める。
+ *
+ * 本文が同じ行に無い場合は、次の行以降を本文として拾う（SRT風の書き方）。
+ *
+ * @param {string} src
+ * @returns {Array<{index:number, start:string, end:string, text:string}>}
+ */
+function parseTimedText(src) {
+  if (!src || !src.trim()) return [];
+
+  /* タイムコード: HH:MM:SS(.|,)mmm / HH:MM:SS:FF / MM:SS.mmm */
+  const TC = '\\d{1,2}[:;]\\d{1,2}(?:[:;]\\d{1,2})?(?:[.,]\\d{1,3})?';
+  /* 矢印: → -> --> ⇒ 〜 ~ — など */
+  const ARROW = '(?:-{1,2}>|→|⇒|—>|–>|〜|~|to)';
+
+  const lineRe = new RegExp(
+    '^\\s*[\\[\\(（【]?\\s*' +   // 開き括弧（任意）
+    '(' + TC + ')' +                     // 開始
+    '\\s*' + ARROW + '\\s*' +        // 矢印
+    '(' + TC + ')' +                     // 終了
+    '\\s*[\\]\\)）】]?' +          // 閉じ括弧（任意）
+    '[\\s\u3000]*(.*)$'               // 本文（全角スペース区切りも許す）
+  );
+
+  const lines = src.replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let pending = null;
+
+  const flush = () => {
+    if (pending && pending.text.trim()) {
+      out.push({
+        index: out.length + 1,
+        start: pending.start,
+        end: pending.end,
+        text: pending.text.trim().replace(/\s+/g, ' ')
+      });
+    }
+    pending = null;
+  };
+
+  for (const raw of lines) {
+    const line = raw.replace(/\u3000/g, ' ');
+    const m = lineRe.exec(line);
+
+    if (m) {
+      flush();
+      pending = { start: normalizeTc(m[1]), end: normalizeTc(m[2]), text: m[3] || '' };
+      continue;
+    }
+
+    const t = line.trim();
+    if (!t) { flush(); continue; }
+
+    /* SRTの連番行は無視する */
+    if (/^\d+$/.test(t)) continue;
+
+    /* 直前のタイムコード行に本文が無かった場合、この行を本文として拾う */
+    if (pending) pending.text += (pending.text ? ' ' : '') + t;
+  }
+  flush();
+
+  return out;
+}
+
+/** タイムコードの区切りを正規化する（; → : 、, → .） */
+function normalizeTc(tc) {
+  let s = String(tc).trim().replace(/;/g, ':').replace(/,/g, '.');
+  const parts = s.split(':');
+  /* MM:SS.mmm のように時が省略されている場合は補う */
+  if (parts.length === 2) s = '00:' + s;
+  return s;
+}
+
+/**
  * 字幕ブロックを、タイムコードを保ったままテロップ行へ整形する。
  * 1ブロックが複数行になった場合、表示時間を行数で等分する。
  *
@@ -243,6 +326,7 @@ function tcToSrt(tc) {
     formatTelop: formatTelop,
     checkNotation: checkNotation,
     parseSubtitles: parseSubtitles,
+    parseTimedText: parseTimedText,
     formatSubtitles: formatSubtitles,
     toSrt: toSrt,
     tcToSeconds: tcToSeconds,
