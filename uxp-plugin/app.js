@@ -729,7 +729,9 @@ function selectTab(id) {
     attr(tab, { 'aria-selected': active ? 'true' : 'false', tabindex: active ? '0' : '-1' });
     panel.hidden = !active;
   });
-  window.scrollTo({ top: 0 });
+  /* スクロールするのは main。body ではない */
+  const main = document.querySelector('main');
+  if (main) main.scrollTop = 0;
 }
 
 function wireTabs() {
