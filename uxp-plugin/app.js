@@ -356,9 +356,12 @@ function buildTelopPanel() {
   opts.appendChild(maxLabel);
 
   const leadLabel = el('label', 'field narrow');
-  add(leadLabel, el('span', null, '前倒しF'));
+  add(leadLabel, el('span', null, '何F早く出す'));
   const leadIn = el('input');
-  attr(leadIn, { type: 'number', id: 'telop-lead', value: '1', min: '0', max: '10' });
+  attr(leadIn, {
+    type: 'number', id: 'telop-lead', value: '1', min: '0', max: '10',
+    title: 'テロップをタイムコードより何フレーム早く表示するか。マニュアルの目安は1フレーム前。'
+  });
   leadLabel.appendChild(leadIn);
   opts.appendChild(leadLabel);
 
@@ -384,8 +387,16 @@ function buildTelopPanel() {
 
   card.appendChild(opts);
 
-  const leadNote = el('p', 'stat');
-  leadNote.textContent = '前倒しF: 子音発声の何フレーム前に出すか。マニュアルの目安は1フレーム前。';
+  const leadNote = el('div', 'help');
+  add(leadNote,
+    el('strong', null, '「何F早く出す」とは'),
+    el('p', null,
+      'テロップをタイムコードより何フレーム早く表示するかです。' +
+      '文字起こしの時刻は「音が聞こえた瞬間」なので、そのまま出すと声より遅れて見えます。'),
+    el('p', null,
+      'マニュアルでは「カットがない場所でテロップを切り替える場合は、子音発声の1フレーム前を目安にする」' +
+      'と定めています。既定の 1 のままで構いません。')
+  );
   card.appendChild(leadNote);
 
   const runRow = el('div', 'btn-row');
