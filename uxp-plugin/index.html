@@ -34,6 +34,13 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script type="module" src="app.js"></script>
+<!--
+  UXPはESモジュールに対応していないため、古典的なスクリプトとして依存順に読み込む。
+  各ファイルはグローバルへ自分を登録する。読み込み順を変えないこと。
+-->
+<script src="data/manual-snapshot.js"></script>
+<script src="telop.js"></script>
+<script src="adapter.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

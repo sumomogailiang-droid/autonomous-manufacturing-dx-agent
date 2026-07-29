@@ -82,9 +82,11 @@ const snapshot = {
 };
 
 /*
- * ESモジュールとして書き出す。
- * UXPでは fetch() によるローカルファイル読み込みが環境差で失敗することがあるため、
- * import で確実に読める形にしておく。ブラウザでもそのまま動く。
+ * UMD形式で書き出す。
+ *
+ * UXPは <script type="module"> に対応していないため、ESモジュールにすると
+ * Premiere内でパネルが真っ白になる。グローバルへ代入する古典的スクリプトにする。
+ * Node から require/import しても使えるよう module.exports も付ける。
  */
 const target = resolve(ROOT, 'uxp-plugin/data/manual-snapshot.js');
 mkdirSync(dirname(target), { recursive: true });
@@ -95,9 +97,17 @@ const module_ = [
   ' * manual-snapshot.js',
   ' * このファイルは tools/build-plugin-data.mjs が生成します。手で編集しないでください。',
   ' * 情報源: video-manual-visualizer/manual-data.js',
+  ' *',
+  ' * UXPは ESモジュールに対応していないため、グローバルへ代入する形式にしている。',
   ' */',
   '',
-  'export default ' + json + ';',
+  '(function (root, factory) {',
+  '  var data = factory();',
+  '  root.MANUAL_SNAPSHOT = data;',
+  "  if (typeof module === 'object' && module.exports) { module.exports = data; }",
+  "})(typeof globalThis !== 'undefined' ? globalThis : this, function () {",
+  '  return ' + json + ';',
+  '});',
   ''
 ].join('\n');
 

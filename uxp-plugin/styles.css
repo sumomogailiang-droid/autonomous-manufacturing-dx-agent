@@ -72,16 +72,19 @@ li { margin-bottom: 2px; }
   background: var(--bg-2);
   border-bottom: 1px solid var(--bd);
   padding: 8px 10px;
-  position: sticky; top: 0; z-index: 10;
 }
-.bar-main { display: flex; align-items: center; gap: 8px; }
-.bar-main h1 { flex: 1; }
-.seq { font-size: 11px; color: var(--mu); margin: 4px 0 0; }
+.bar-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bar-main h1 { flex: 1 1 auto; min-width: 0; }
+.seq { font-size: 11px; color: var(--mu); margin: 4px 0 0; overflow-wrap: anywhere; }
 .env { font-size: 10.5px; color: var(--mu); margin: 2px 0 0; }
 .env.mock { color: var(--warn); }
 
 /* --- タブ -------------------------------------------------------------- */
 
+/*
+ * ヘッダーとタブを両方 sticky にすると、パネルが低いときに重なる。
+ * タブだけを固定する。
+ */
 .tabs {
   display: flex; gap: 1px;
   background: var(--bg-2);

@@ -13,7 +13,15 @@
  *  - 意味のまとまりで改行する。
  *
  * このモジュールはブラウザ・UXP・Node のどれでも動く（依存なし）。
+ * UXPは ESモジュールに対応していないため、グローバルへ代入するUMD形式にしている。
  */
+
+(function (root, factory) {
+  var api = factory();
+  root.TelopUtils = api;
+  if (typeof module === 'object' && module.exports) { module.exports = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
 
 /** 1行の分割候補として優先する助詞 */
 const PARTICLES = ['は', 'が', 'を', 'に', 'で', 'と', 'も', 'へ', 'や', 'ね', 'よ'];
@@ -25,7 +33,7 @@ const PARTICLES = ['は', 'が', 'を', 'に', 'で', 'と', 'も', 'へ', 'や'
  * @param {{maxChars?:number, dictionary?:Array}} opts
  * @returns {{lines:string[], warnings:Array, notation:Array}}
  */
-export function formatTelop(input, opts = {}) {
+function formatTelop(input, opts = {}) {
   const MAX = clamp(opts.maxChars ?? 18, 8, 30);
   const dictionary = opts.dictionary ?? [];
 
@@ -96,7 +104,7 @@ export function formatTelop(input, opts = {}) {
  * @param {string[]} lines
  * @param {Array<{wrong:string, correct:string, note?:string}>} dictionary
  */
-export function checkNotation(lines, dictionary) {
+function checkNotation(lines, dictionary) {
   const found = [];
   if (!dictionary || !dictionary.length) return found;
 
@@ -132,7 +140,7 @@ export function checkNotation(lines, dictionary) {
  * @param {string} src SRTまたはVTTのテキスト
  * @returns {Array<{index:number, start:string, end:string, text:string}>}
  */
-export function parseSubtitles(src) {
+function parseSubtitles(src) {
   if (!src || !src.trim()) return [];
 
   const text = src.replace(/\r\n?/g, '\n').replace(/^WEBVTT.*\n/, '');
@@ -168,7 +176,7 @@ export function parseSubtitles(src) {
  * @param {Array} blocks parseSubtitles の戻り値
  * @param {{maxChars?:number, dictionary?:Array}} opts
  */
-export function formatSubtitles(blocks, opts = {}) {
+function formatSubtitles(blocks, opts = {}) {
   const out = [];
   for (const b of blocks) {
     const { lines } = formatTelop(b.text, opts);
@@ -197,7 +205,7 @@ export function formatSubtitles(blocks, opts = {}) {
  * 整形済みテロップをSRTとして書き出す。
  * Premiereのキャプション取り込みに使える。
  */
-export function toSrt(items) {
+function toSrt(items) {
   return items
     .map((it, i) => `${i + 1}\n${tcToSrt(it.start)} --> ${tcToSrt(it.end)}\n${it.text}\n`)
     .join('\n');
@@ -211,13 +219,13 @@ function len(s) { return [...String(s)].length; }
 
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(Number(n) || lo, hi)); }
 
-export function tcToSeconds(tc) {
+function tcToSeconds(tc) {
   const m = /(\d{2}):(\d{2}):(\d{2})[.,](\d{1,3})/.exec(tc);
   if (!m) return 0;
   return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4].padEnd(3, '0')) / 1000;
 }
 
-export function secondsToTc(sec) {
+function secondsToTc(sec) {
   const s = Math.max(0, sec);
   const h = Math.floor(s / 3600);
   const m = Math.floor(s / 60) % 60;
@@ -230,3 +238,14 @@ export function secondsToTc(sec) {
 function tcToSrt(tc) {
   return tc.replace('.', ',');
 }
+
+  return {
+    formatTelop: formatTelop,
+    checkNotation: checkNotation,
+    parseSubtitles: parseSubtitles,
+    formatSubtitles: formatSubtitles,
+    toSrt: toSrt,
+    tcToSeconds: tcToSeconds,
+    secondsToTc: secondsToTc
+  };
+});

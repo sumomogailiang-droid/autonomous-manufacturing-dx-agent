@@ -10,9 +10,18 @@
  *
  * Premiere が無い環境（ブラウザ・Node）では自動的にモックへ切り替わり、
  * UI の動作確認ができます。
+ *
+ * UXPは ESモジュールに対応していないため、グローバルへ代入するUMD形式にしている。
  */
 
 /* eslint-disable no-undef */
+
+(function (root, factory) {
+  var api = factory();
+  root.PremiereAdapter = api;
+  if (typeof module === 'object' && module.exports) { module.exports = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
 
 const IS_UXP = (() => {
   try {
@@ -44,7 +53,7 @@ const mockState = {
 /* 公開API                                                             */
 /* ------------------------------------------------------------------ */
 
-export const adapter = {
+const adapter = {
   /** Premiere 実機で動いているか */
   isPremiere() {
     return IS_UXP && !!ppro;
@@ -263,3 +272,6 @@ function formatSeconds(sec) {
   const p = (n) => String(n).padStart(2, '0');
   return `${p(h)};${p(m)};${p(s)};${p(f)}`;
 }
+
+  return adapter;
+});

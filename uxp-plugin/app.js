@@ -12,16 +12,34 @@
  *  - チェック状態はパネルを開いている間だけ保持する。
  */
 
-import { adapter } from './adapter.js';
-import { formatTelop, parseSubtitles, formatSubtitles, toSrt, checkNotation } from './telop.js';
+/*
+ * UXPは ESモジュールに対応していないため、import は使わない。
+ * 先に読み込まれたスクリプトがグローバルへ置いた値を使う。
+ */
+(function () {
+  'use strict';
 
-/* ------------------------------------------------------------------ */
-/* データ読み込み                                                       */
-/* ------------------------------------------------------------------ */
+  const adapter = globalThis.PremiereAdapter;
+  const T = globalThis.TelopUtils || {};
+  const { formatTelop, parseSubtitles, formatSubtitles, toSrt, checkNotation } = T;
+  const DATA = globalThis.MANUAL_SNAPSHOT;
 
-import SNAPSHOT from './data/manual-snapshot.js';
-
-const DATA = SNAPSHOT;
+  /* 依存が読めていない場合は、黙って白画面にせず画面へ出す */
+  if (!adapter || !DATA || !formatTelop) {
+    document.addEventListener('DOMContentLoaded', function () {
+      const host = document.getElementById('panel-material') || document.body;
+      const box = document.createElement('div');
+      box.className = 'alert';
+      const missing = [
+        !adapter ? 'adapter.js' : null,
+        !formatTelop ? 'telop.js' : null,
+        !DATA ? 'data/manual-snapshot.js' : null
+      ].filter(Boolean).join(', ');
+      box.textContent = '読み込めなかったファイル: ' + missing;
+      host.appendChild(box);
+    });
+    return;
+  }
 
 /* ------------------------------------------------------------------ */
 /* DOMユーティリティ                                                    */
@@ -780,8 +798,9 @@ async function init() {
   });
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();

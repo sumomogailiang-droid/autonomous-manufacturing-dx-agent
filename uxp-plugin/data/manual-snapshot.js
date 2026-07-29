@@ -2,9 +2,16 @@
  * manual-snapshot.js
  * このファイルは tools/build-plugin-data.mjs が生成します。手で編集しないでください。
  * 情報源: video-manual-visualizer/manual-data.js
+ *
+ * UXPは ESモジュールに対応していないため、グローバルへ代入する形式にしている。
  */
 
-export default {
+(function (root, factory) {
+  var data = factory();
+  root.MANUAL_SNAPSHOT = data;
+  if (typeof module === 'object' && module.exports) { module.exports = data; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  return {
   "generatedAt": "2026-07-29",
   "source": "video-manual-visualizer/manual-data.js",
   "note": "このファイルは tools/build-plugin-data.mjs が生成します。手で編集しないでください。",
@@ -2431,3 +2438,4 @@ export default {
     }
   ]
 };
+});

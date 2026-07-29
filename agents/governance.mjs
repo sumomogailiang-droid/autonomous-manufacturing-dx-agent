@@ -116,8 +116,20 @@ checkGenerated('tools/build-plugin-data.mjs', 'uxp-plugin/data/manual-snapshot.j
 
 /* 件数の一致 */
 const knowledge = read('agents/knowledge/common-manual.md');
-const snapshotSrc = read('uxp-plugin/data/manual-snapshot.js');
-const snapshot = safe(() => JSON.parse(snapshotSrc.replace(/^[\s\S]*?export default /, '').replace(/;\s*$/, '')));
+
+/*
+ * スナップショットはUMD形式なので require で読む。
+ * 形式を変えたときに黙ってスキップされないよう、読めない場合はブロッカーにする。
+ */
+const snapshot = safe(() => require(resolve(ROOT, 'uxp-plugin/data/manual-snapshot.js')));
+
+record({
+  id: 'C1-05', category: CAT1, severity: 'blocker',
+  name: 'UXPプラグインのデータが読み込める',
+  pass: !!snapshot && Array.isArray(snapshot.checklist),
+  detail: snapshot ? `提出前チェック${snapshot.checklist?.length ?? '?'}項目` : '読み込み失敗（形式が変わった可能性）',
+  action: 'node tools/build-plugin-data.mjs を実行し、出力形式を確認してください'
+});
 
 if (DATA && snapshot) {
   const pairs = [
@@ -456,6 +468,42 @@ for (const [id, path, label] of DELIVERABLES) {
     action: `${path} を作成してください`
   });
 }
+
+/*
+ * UXPは <script type="module"> に対応していない。
+ * ESモジュール構文が混ざるとPremiere内でパネルが真っ白になるため検査する。
+ */
+const pluginFiles = [
+  'uxp-plugin/index.html',
+  'uxp-plugin/app.js',
+  'uxp-plugin/adapter.js',
+  'uxp-plugin/telop.js',
+  'uxp-plugin/data/manual-snapshot.js'
+];
+const esmHits = [];
+function stripComments(src, isHtml) {
+  let out = src.replace(/\/\*[\s\S]*?\*\//g, '');       // ブロックコメント
+  out = out.replace(/^\s*\/\/.*$/gm, '');                 // 行コメント
+  if (isHtml) out = out.replace(/<!--[\s\S]*?-->/g, '');   // HTMLコメント
+  return out;
+}
+
+for (const f of pluginFiles) {
+  const raw = read(f);
+  if (!raw) { esmHits.push(`${f}: 読めません`); continue; }
+  /* 説明文での誤検出を避けるため、コメントを除いてから検査する */
+  const t = stripComments(raw, f.endsWith('.html'));
+  if (/type\s*=\s*["']module["']/.test(t)) esmHits.push(`${f}: type="module"`);
+  if (/^\s*export\s+(default|const|function|\{)/m.test(t)) esmHits.push(`${f}: export`);
+  if (/^\s*import\s+[\w{*]/m.test(t)) esmHits.push(`${f}: import`);
+}
+record({
+  id: 'C7-09', category: CAT7, severity: 'blocker',
+  name: 'UXPプラグインにESモジュール構文が混ざっていない',
+  pass: esmHits.length === 0,
+  detail: esmHits.length ? esmHits.join(' / ') : `${pluginFiles.length}ファイルすべて古典的スクリプト`,
+  action: 'UXPは type="module" / import / export に対応していません。グローバル登録方式にしてください'
+});
 
 /* Premiere API の未検証を隠していないか */
 const adapterSrc = read('uxp-plugin/adapter.js');
