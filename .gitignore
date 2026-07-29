@@ -8,3 +8,6 @@ manuals/
 
 node_modules/
 .DS_Store
+
+# ダッシュボード出力（生成物）
+agents/dashboard.html
