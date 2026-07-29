@@ -93,7 +93,7 @@
 
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    themeBtn.textContent = theme === 'dark' ? '☀ ライトモードにする' : '🌙 ダークモードにする';
+    themeBtn.textContent = theme === 'dark' ? 'ライトモードにする' : 'ダークモードにする';
     attr(themeBtn, { 'aria-label': theme === 'dark' ? 'ライトモードに切り替える' : 'ダークモードに切り替える' });
   }
 
@@ -320,7 +320,7 @@
       var sec = el('section', 'section num-group');
       sec.appendChild(el('h3', null, group.group));
       if (group.unitNote) {
-        sec.appendChild(el('p', 'unit-note', '📘 ' + group.unitNote));
+        sec.appendChild(el('p', 'unit-note', '用語メモ　' + group.unitNote));
       }
 
       var scroll = el('div', 'table-scroll');
@@ -646,7 +646,7 @@
 
       if (t.extra) { card.appendChild(el('p', 'stat-note', t.extra)); }
 
-      var btn = el('button', 'btn btn-primary', '📋 本文をコピー');
+      var btn = el('button', 'btn btn-primary', '本文をコピー');
       attr(btn, { type: 'button' });
       btn.addEventListener('click', function () {
         copyText(t.body, '「' + t.title + '」をコピーしました');
@@ -867,7 +867,7 @@
     mSec.appendChild(list(DATA.audit.missingLinks, 'audit-list missing', function (li, item) {
       append(li, el('span', 'badge badge-project', item.label), el('span', null, item.text));
     }));
-    mSec.appendChild(el('div', 'policy-note', '🚫 ' + DATA.audit.missingLinkPolicy + '　このビジュアライザーにも、推測したURLは一切載せていません。'));
+    mSec.appendChild(el('div', 'policy-note', DATA.audit.missingLinkPolicy + '　このビジュアライザーにも、推測したURLは一切載せていません。'));
     host.appendChild(mSec);
 
     /* 要確認 */
@@ -886,7 +886,7 @@
     oSec.appendChild(list(DATA.audit.outdated, 'audit-list toc', function (li, item) {
       var box = el('span');
       append(box, el('span', null, item.text), el('span', 'reason', '理由：' + item.reason));
-      append(li, el('span', null, '🕗'), box);
+      append(li, el('span', null, '旧'), box);
     }));
     host.appendChild(oSec);
 
@@ -1020,7 +1020,7 @@
     fSec.appendChild(list(C.flow, 'steps-flow'));
     var pCard = el('div', 'card');
     pCard.style.marginTop = '12px';
-    append(pCard, el('h4', null, '🚫 やってはいけないこと'), list(C.prohibited));
+    append(pCard, el('h4', null, 'やってはいけないこと'), list(C.prohibited));
     fSec.appendChild(pCard);
     host.appendChild(fSec);
 
@@ -1194,7 +1194,7 @@
       );
       return h;
     })());
-    host.appendChild(el('p', 'stat-note', '📘 ' + DATA.stats.note));
+    host.appendChild(el('p', 'stat-note', DATA.stats.note));
 
     var k = el('section', 'section');
     k.appendChild(el('h3', null, 'マニュアルによく出てくる言葉'));

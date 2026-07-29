@@ -353,15 +353,23 @@ main { max-width: var(--maxw); margin: 0 auto; padding: 20px 16px 64px; }
   padding: 13px 15px;
 }
 .detail-block h4 {
-  font-size: 13px; margin-bottom: 7px;
-  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; margin-bottom: 8px;
+  letter-spacing: .06em;
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text-muted);
 }
-.detail-block h4::before { font-size: 14px; }
-.detail-block.what h4::before { content: "🛠"; }
-.detail-block.why  h4::before { content: "💡"; }
-.detail-block.fail h4::before { content: "⚠"; }
-.detail-block.done h4::before { content: "✅"; }
-.detail-block.rel  h4::before { content: "🔗"; }
+/* 見出しの左に色帯を置き、文字ラベルと併せて種別を示す（絵文字は使わない） */
+.detail-block h4::before {
+  content: ""; flex: 0 0 auto;
+  width: 3px; height: 1em; border-radius: 2px;
+  background: var(--text-muted);
+}
+.detail-block.what h4::before { background: var(--accent); }
+.detail-block.why  h4::before { background: var(--project); }
+.detail-block.fail h4::before { background: var(--ng); }
+.detail-block.done h4::before { background: var(--ok); }
+.detail-block.rel  h4::before { background: var(--border-strong); }
+.detail-block.fail h4, .detail-block.done h4 { color: inherit; }
 .detail-block ul { padding-left: 1.2em; margin: 0; font-size: 13px; }
 
 .detail-block.fail { background: var(--ng-bg); border-color: var(--ng); }
