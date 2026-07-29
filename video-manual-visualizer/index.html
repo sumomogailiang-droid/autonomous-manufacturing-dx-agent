@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>動画編集者 全体マニュアル ビジュアライザー</title>
+<meta name="description" content="動画編集者の全体マニュアルを、依頼から納品・修正・保存までの工程ごとに分解したビジュアライザーです。中学生や動画編集初心者でも理解できるように解説しています。">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">本文へスキップ</a>
+
+<header class="site-header">
+  <div class="header-inner">
+    <h1 class="site-title">
+      動画編集者 全体マニュアル ビジュアライザー
+      <span class="sub">依頼を受けてから納品・修正・保存するまでの全工程を、中学生でも分かる形に分解しました</span>
+    </h1>
+    <button type="button" id="theme-toggle" class="theme-toggle">🌙 ダークモードにする</button>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="画面の切り替え">
+  <div class="tabs-inner" id="tabs-inner" role="tablist" aria-label="ビジュアライザーの画面">
+    <!-- タブは app.js が生成します -->
+  </div>
+</nav>
+
+<main id="main">
+  <section class="panel" id="panel-flow"       role="tabpanel" aria-labelledby="tab-flow"       tabindex="0"></section>
+  <section class="panel" id="panel-numbers"    role="tabpanel" aria-labelledby="tab-numbers"    tabindex="0" hidden></section>
+  <section class="panel" id="panel-accidents"  role="tabpanel" aria-labelledby="tab-accidents"  tabindex="0" hidden></section>
+  <section class="panel" id="panel-check"      role="tabpanel" aria-labelledby="tab-check"      tabindex="0" hidden></section>
+  <section class="panel" id="panel-templates"  role="tabpanel" aria-labelledby="tab-templates"  tabindex="0" hidden></section>
+  <section class="panel" id="panel-dictionary" role="tabpanel" aria-labelledby="tab-dictionary" tabindex="0" hidden></section>
+  <section class="panel" id="panel-audit"      role="tabpanel" aria-labelledby="tab-audit"      tabindex="0" hidden></section>
+  <section class="panel" id="panel-ledger"     role="tabpanel" aria-labelledby="tab-ledger"     tabindex="0" hidden></section>
+  <section class="panel" id="panel-clips"      role="tabpanel" aria-labelledby="tab-clips"      tabindex="0" hidden></section>
+  <section class="panel" id="panel-growth"     role="tabpanel" aria-labelledby="tab-growth"     tabindex="0" hidden></section>
+  <section class="panel" id="panel-stats"      role="tabpanel" aria-labelledby="tab-stats"      tabindex="0" hidden></section>
+  <section class="panel" id="panel-glossary"   role="tabpanel" aria-labelledby="tab-glossary"   tabindex="0" hidden></section>
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <p id="data-stamp"></p>
+    <p>
+      このページのデータは、提供されたマニュアル本文のみを情報源としています。
+      外部APIやGoogleスプレッドシートへの通信は行いません。すべてローカルデータとして保持しています。
+    </p>
+    <p>
+      解説URLが空欄・省略されている項目については、URLを推測して補っていません。
+      「改善候補」は現行マニュアルの正式ルールではないため、正式ルールとは分けて表示しています。
+    </p>
+    <p>提出前チェックの状態は、ページを再読み込みすると外れます（保存されません）。</p>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="manual-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
