@@ -17,6 +17,7 @@
 
 import { createRequire } from 'node:module';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -229,6 +230,20 @@ const TOOLS = [
         speaker: { type: 'string', description: '話者名（省略可）。複数話者の色分け確認に使う。' }
       },
       required: ['text']
+    }
+  },
+  {
+    name: 'governance_audit',
+    description:
+      '全エージェント・全成果物を機械的に監査し、出荷可否（GO / NO-GO）を返す。' +
+      'リリース前、または「全部チェックして」と言われたときに必ず呼ぶ。' +
+      'データ整合性・ルール分離・URL推測の有無・検証スイート・エージェント登録・未解決事項・成果物を検査する。' +
+      '印象で「問題ありません」と答えず、必ずこの結果に基づいて判定すること。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        only_failures: { type: 'boolean', description: '失敗した項目だけ返す（既定false）', default: false }
+      }
     }
   },
   {
@@ -725,6 +740,75 @@ const HANDLERS = {
     lines.push('- 子音発声の1フレーム前に表示する');
     lines.push('- 固有名詞は公式サイトで裏取りする');
     if (speaker) lines.push('- 複数話者の場合、話者ごとのテロップ色が統一されているか');
+
+    return text(lines.join('\n'));
+  },
+
+  governance_audit({ only_failures = false }) {
+    /*
+     * 監査の内部から呼ばれた場合は実行しない。
+     * governance -> test-mcp -> governance_audit の無限再帰を防ぐ。
+     */
+    if (Number(process.env.VM_GOVERNANCE_DEPTH || 0) > 0) {
+      return text(
+        '# ガバナンス監査（入れ子のため実行を省略）\n\n' +
+        'この呼び出しは監査プロセスの内部から行われました。\n' +
+        '再帰を防ぐため実行していません。監査結果は親プロセスの出力を参照してください。'
+      );
+    }
+
+    let json;
+    try {
+      json = execFileSync(process.execPath, [resolve(__dirname, 'governance.mjs'), '--json'], {
+        cwd: ROOT, stdio: 'pipe', encoding: 'utf8', maxBuffer: 8 * 1024 * 1024,
+        env: { ...process.env, VM_GOVERNANCE_DEPTH: '1' }
+      });
+    } catch (e) {
+      /* ブロッカーがあると非ゼロ終了するが、stdout にJSONが出ている */
+      json = e.stdout || '';
+    }
+
+    let r;
+    try { r = JSON.parse(json); } catch (_) {
+      throw new Error('監査を実行できませんでした。node agents/governance.mjs を直接実行して確認してください。');
+    }
+
+    const rows = only_failures ? r.checks.filter((c) => !c.pass) : r.checks;
+
+    const lines = [
+      `# ガバナンス監査結果: ${r.verdict}`,
+      '',
+      `検査 ${r.total}件 / 合格 ${r.passed}件 / ブロッカー ${r.blockers}件 / 警告 ${r.warnings}件`,
+      `実施: ${r.checkedAt.slice(0, 19).replace('T', ' ')}`,
+      ''
+    ];
+
+    if (r.blockers > 0) {
+      lines.push('## ブロッカー（これが1件でもあれば NO-GO）', '');
+      lines.push('| ID | 内容 | 対応 |', '|---|---|---|');
+      for (const c of r.checks.filter((x) => !x.pass && x.severity === 'blocker')) {
+        lines.push(`| ${c.id} | ${c.name} | ${c.action} |`);
+      }
+      lines.push('');
+    }
+
+    const warnRows = r.checks.filter((x) => !x.pass && x.severity === 'warn');
+    if (warnRows.length) {
+      lines.push('## 警告（出荷は可能だが対応推奨）', '');
+      for (const c of warnRows) lines.push(`- ${c.id} ${c.name}: ${c.detail}`);
+      lines.push('');
+    }
+
+    lines.push(only_failures ? '## 失敗した検査' : '## 全検査', '');
+    lines.push('| ID | カテゴリ | 検査 | 結果 | 詳細 |', '|---|---|---|---|---|');
+    for (const c of rows) {
+      const mark = c.pass ? 'PASS' : (c.severity === 'blocker' ? 'BLOCK' : 'WARN');
+      lines.push(`| ${c.id} | ${c.category} | ${c.name} | ${mark} | ${(c.detail || '').replace(/\|/g, '\\|')} |`);
+    }
+
+    lines.push('');
+    lines.push('> 未解決の矛盾（演出頻度・提出方法）は「解決されていること」ではなく');
+    lines.push('> 「正しく表示されていること」を検査しています。独断で解決しないでください。');
 
     return text(lines.join('\n'));
   },

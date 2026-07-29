@@ -19,7 +19,31 @@ agents/
   mcp-server.mjs           ★ MCPサーバー。Codex / Claude Code 共通の接続口
 ```
 
-## 役割分担
+## 体制
+
+```
+              CTO（制作チームの外から監査・裁定）
+                        │
+       ┌────────────────┴────────────────┐
+       │          制作チーム              │
+       │   お互いに連携できる             │
+       ├──────────────────────────────────┤
+       │ ディレクター    編集品質・提出可否 │
+       │ 共通マニュアル  共通ルールの判定   │
+       │ 案件別マニュアル 案件ルールの上書き │
+       │ 図解・画像      画像生成 (Codex)  │
+       │ テロップ        文字起こし→字幕   │
+       │ MCPサーバー     全員の接続口       │
+       └──────────────────────────────────┘
+```
+
+**CTO** は制作チームの外から全体を監査し、出荷可否（GO / NO-GO）を判定します。
+判断が割れたときの裁定もCTOが行います。ただし演出頻度と提出方法の確定はディレクターの権限です。
+
+**制作チーム** の6メンバーはお互いに連携できます。担当外の判断は抱え込まず、担当メンバーへ渡してください。
+渡すときは「何を・なぜ・どの根拠で」を明示し、受け取った側はMCPツールで裏を取ります。
+
+## 実行環境の役割分担
 
 | | 担当 | 理由 |
 |---|---|---|
@@ -80,6 +104,7 @@ Claude Codeは画像を作れませんが、「この場面は和やかだから
 | `get_accident_map` | 事故防止16件 | Claude Code |
 | `get_design_rules` | 図解・画像・テロップの制作ルール | **Codex（生成前に必須）** |
 | `format_telop` | 文字起こし → テロップ行へ整形 | **Codex** |
+| `governance_audit` | 全体を監査してGO/NO-GOを返す | **CTO** |
 | `list_projects` | 登録済み案件一覧 | 両方 |
 | `get_project_rules` | 案件マニュアル取得 | 両方 |
 
@@ -100,13 +125,21 @@ Claude Codeは画像を作れませんが、「この場面は和やかだから
 ## セットアップ
 
 ```bash
-# 知識ベースを生成（manual-data.js を更新したら必ず再実行）
+# 知識ベースとプラグインデータを生成（manual-data.js を更新したら必ず再実行）
 node agents/build-knowledge.mjs
+node tools/build-plugin-data.mjs
 
 # 検証
-node video-manual-visualizer/validate-data.js   # データ検証 181項目
-node agents/test-mcp.mjs                        # MCP疎通テスト 53項目
+node video-manual-visualizer/validate-data.js   # データ検証
+node agents/test-mcp.mjs                        # MCP疎通テスト
+node agents/governance.mjs                      # CTOによる全体監査（GO / NO-GO）
+
+# 体制の確認
+node agents/dashboard.mjs --audit               # ドット絵で構成と監査結果を表示
 ```
+
+**リリース前は必ず `node agents/governance.mjs` を実行してください。**
+ブロッカーが1件でもあれば NO-GO です。印象で「問題ありません」と判断してはいけません。
 
 案件マニュアルの登録:
 

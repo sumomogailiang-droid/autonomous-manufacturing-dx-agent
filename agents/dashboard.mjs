@@ -16,6 +16,7 @@
 
 import { createRequire } from 'node:module';
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +27,7 @@ const DATA = require(resolve(ROOT, 'video-manual-visualizer/manual-data.js'));
 
 const args = process.argv.slice(2);
 const WANT_HTML = args.includes('--html');
+const WANT_AUDIT = args.includes('--audit');
 const NO_COLOR = args.includes('--no-color') || process.env.NO_COLOR;
 
 /* ------------------------------------------------------------------ */
@@ -46,12 +48,56 @@ const PALETTE = {
   'e': '#0f7b3e',     // 緑（テロップ）
   'E': '#3fc47c',     // 緑ハイライト
   'r': '#b3261e',     // 赤（警告）
-  'y': '#f0c46b'      // 黄
+  'y': '#f0c46b',     // 黄
+  'c': '#8a6d1f',     // 金（CTO）
+  'C': '#e8c76a',     // 金ハイライト
+  'm': '#8f2f28',     // 朱（ディレクター）
+  'M': '#e06b60'      // 朱ハイライト
 };
 
 /* ------------------------------------------------------------------ */
 /* スプライト 16x16                                                     */
 /* ------------------------------------------------------------------ */
+
+/* CTO超エージェント：王冠（金） */
+const SPR_CTO = [
+  '................',
+  '................',
+  '..k..........k..',
+  '.kck........kck.',
+  '.kck..k..k..kck.',
+  '.kck.kck.kck.kck',
+  'kcCckccCcckcCck.',
+  'kcCcccCCCcccCck.',
+  'kcCCCCCCCCCCCck.',
+  'kcCcccCCCcccCck.',
+  'kccccccccccccck.',
+  'kcCCCCCCCCCCCck.',
+  'kccccccccccccck.',
+  '.kkkkkkkkkkkkk..',
+  '................',
+  '................'
+];
+
+/* ディレクターエージェント：メガホン（朱） */
+const SPR_DIRECTOR = [
+  '................',
+  '..............k.',
+  '...........kkmk.',
+  '........kkmMMmk.',
+  '.....kkmMMMMMmk.',
+  '..kkmMMMMMMMMmk.',
+  '.kmMMMMMMMMMMmk.',
+  'kmMMMMMMMMMMMmk.',
+  'kmMMMMMMMMMMMmk.',
+  '.kmMMMMMMMMMMmk.',
+  '..kkmMMMMMMMMmk.',
+  '.....kkmMMMMmk..',
+  '........kkmmk...',
+  '..........kk....',
+  '................',
+  '................'
+];
 
 /* 共通マニュアルエージェント：バインダー（青） */
 const SPR_COMMON = [
@@ -138,10 +184,10 @@ const SPR_MCP = [
   '................',
   '....kkkkkkkk....',
   '..kkggggggggkk..',
-  '..kgggggggggg k.'.replace(' ', 'g'),
+  '..kggggggggggk..',
   '.kggwwggggwwggk.',
   '.kggwwggggwwggk.',
-  '.kgggggggggggg k'.replace(' ', 'g'),
+  '.kggggggggggggk.',
   '.kggEEEEEEEEggk.',
   '.kggEwwwwwwEggk.',
   '.kggEEEEEEEEggk.',
@@ -152,6 +198,16 @@ const SPR_MCP = [
   '................',
   '................'
 ];
+
+/* スプライトが16x16であることを検証する（崩れた絵をそのまま出さない） */
+for (const [name, spr] of Object.entries({
+  SPR_CTO, SPR_DIRECTOR, SPR_COMMON, SPR_PROJECT, SPR_DESIGN, SPR_TELOP, SPR_MCP
+})) {
+  if (spr.length !== 16 || spr.some((row) => row.length !== 16)) {
+    const bad = spr.map((r, i) => (r.length !== 16 ? `${i}行目:${r.length}文字` : null)).filter(Boolean);
+    throw new Error(`スプライト ${name} が16x16ではありません（${spr.length}行 / ${bad.join(', ')}）`);
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* ターミナル描画                                                       */
@@ -208,6 +264,19 @@ function dim(s) { return NO_COLOR ? s : '\x1b[2m' + s + RESET; }
 const KNOWLEDGE = resolve(__dirname, 'knowledge/common-manual.md');
 const PROJECTS_DIR = resolve(__dirname, 'knowledge/projects');
 
+/* ガバナンス監査を実行して結果を取り込む */
+function safeAudit() {
+  try {
+    const out = execFileSync(process.execPath, [resolve(__dirname, 'governance.mjs'), '--json'], {
+      cwd: ROOT, stdio: 'pipe', encoding: 'utf8'
+    });
+    return JSON.parse(out);
+  } catch (e) {
+    /* ブロッカーがあると非ゼロ終了するが、stdout にはJSONが出ている */
+    try { return JSON.parse(e.stdout || ''); } catch (_) { return null; }
+  }
+}
+
 function collectState() {
   const knowledgeExists = existsSync(KNOWLEDGE);
   const knowledgeSize = knowledgeExists ? readFileSync(KNOWLEDGE, 'utf8').length : 0;
@@ -224,7 +293,14 @@ function collectState() {
       });
   }
 
+  /* ガバナンス監査の結果を取り込む（重いので --audit 指定時のみ） */
+  let governance = null;
+  if (WANT_AUDIT) {
+    governance = safeAudit();
+  }
+
   return {
+    governance,
     knowledgeExists,
     knowledgeSize,
     projects,
@@ -252,9 +328,46 @@ function buildAgents(st) {
 
   return [
     {
+      sprite: SPR_CTO,
+      color: '#e8c76a',
+      tier: 'CTO',
+      name: 'CTO',
+      id: 'cto',
+      host: 'Claude Code',
+      role: '制作チーム統括・出荷可否の判定',
+      status: st.governance ? st.governance.verdict : 'UNKNOWN',
+      ok: st.governance ? st.governance.verdict === 'GO' : false,
+      stats: st.governance
+        ? [
+            `監査 ${st.governance.total}件 / 合格 ${st.governance.passed}件`,
+            `ブロッカー ${st.governance.blockers} / 警告 ${st.governance.warnings}`,
+            'node agents/governance.mjs で実行',
+            '印象で判断せず監査結果に基づく'
+          ]
+        : ['未監査', 'node agents/governance.mjs を実行してください']
+    },
+    {
+      sprite: SPR_DIRECTOR,
+      color: '#e06b60',
+      tier: '制作チーム',
+      name: 'ディレクター',
+      id: 'director',
+      host: 'Claude Code',
+      role: 'UXPプラグイン管轄・編集品質と提出可否',
+      status: 'READY',
+      ok: true,
+      stats: [
+        '品質評価 -5 / 0 / 3 / 5点で採点',
+        '演出頻度と提出方法の決定権を持つ',
+        '指摘には必ずTC・行番号を添える',
+        '怖がらせず具体的な行動へ変換する'
+      ]
+    },
+    {
       sprite: SPR_COMMON,
       color: '#1d4ed8',
-      name: '共通マニュアルエージェント',
+      tier: '制作チーム',
+      name: '共通マニュアル',
       id: 'common-manual',
       host: 'Claude Code',
       role: 'ルール判定・素材確認・提出前チェック',
@@ -270,7 +383,8 @@ function buildAgents(st) {
     {
       sprite: SPR_PROJECT,
       color: '#e0a02a',
-      name: '案件別エージェント',
+      tier: '制作チーム',
+      name: '案件別マニュアル',
       id: 'project-manual',
       host: 'Claude Code',
       role: '案件独自ルールを共通へ上書きして判断',
@@ -284,7 +398,8 @@ function buildAgents(st) {
     {
       sprite: SPR_DESIGN,
       color: '#a689f0',
-      name: '図解・画像エージェント',
+      tier: '制作チーム',
+      name: '図解・画像',
       id: 'get_design_rules',
       host: 'Codex',
       role: '図解と画像の生成（Claude Codeは画像を作れない）',
@@ -300,7 +415,8 @@ function buildAgents(st) {
     {
       sprite: SPR_TELOP,
       color: '#3fc47c',
-      name: 'テロップエージェント',
+      tier: '制作チーム',
+      name: 'テロップ',
       id: 'format_telop',
       host: 'Codex',
       role: '文字起こし → テロップ行（ニュアンスを残す）',
@@ -316,6 +432,7 @@ function buildAgents(st) {
     {
       sprite: SPR_MCP,
       color: '#9aa4b2',
+      tier: '制作チーム',
       name: 'MCPサーバー（video-manual）',
       id: 'mcp-server.mjs',
       host: '共通',
@@ -347,9 +464,16 @@ function printTerminal(st) {
   console.log('');
   console.log(line('═'));
 
+  let lastTier = '';
   for (const a of agents) {
     const art = renderSprite(a.sprite);
     const status = a.ok ? paint('#3fc47c', `● ${a.status}`) : paint('#f0c46b', `▲ ${a.status}`);
+
+    if (a.tier !== lastTier) {
+      console.log('');
+      console.log('  ' + bold(a.tier === 'CTO' ? 'CTO（制作チームの外から監査）' : '制作チーム（お互いに連携できる）'));
+      lastTier = a.tier;
+    }
 
     console.log('');
     /* スプライト8行 と 情報を横並びにする */
@@ -433,7 +557,13 @@ function printHtml(st) {
   const agents = buildAgents(st);
   const pendingTotal = st.projects.reduce((n, p) => n + p.pending, 0);
 
-  const cards = agents.map((a) => `
+  let lastTierHtml = '';
+  const cards = agents.map((a) => {
+    const head = a.tier !== lastTierHtml
+      ? `<h2 class="tier">${a.tier === 'CTO' ? 'CTO（制作チームの外から監査）' : '制作チーム（お互いに連携できる）'}</h2>`
+      : '';
+    lastTierHtml = a.tier;
+    return head + `
     <article class="agent${a.ok ? '' : ' warn'}">
       <div class="sprite">${spriteToSvg(a.sprite)}</div>
       <div class="meta">
@@ -443,7 +573,8 @@ function printHtml(st) {
         <p class="status">${a.ok ? '●' : '▲'} ${esc(a.status)}</p>
         <ul>${a.stats.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
       </div>
-    </article>`).join('');
+    </article>`;
+  }).join('');
 
   const html = `<title>エージェント構成 — 動画編集マニュアル</title>
 <style>
@@ -458,6 +589,7 @@ body{margin:0;padding:24px 16px 56px;background:var(--bg);color:var(--tx);
 h1{font-size:20px;margin:0 0 4px}
 .sub{color:var(--mu);font-size:13px;margin:0 0 24px}
 .agents{display:grid;gap:14px}
+h2.tier{font-size:13px;margin:12px 0 2px;color:var(--mu);letter-spacing:.04em}
 .agent{display:flex;gap:16px;align-items:flex-start;background:var(--card);
  border:1px solid var(--bd);border-radius:10px;padding:16px}
 .agent.warn{border-left:4px solid #e0a02a}

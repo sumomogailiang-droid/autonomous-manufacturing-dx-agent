@@ -65,11 +65,11 @@ const run = async () => {
   /* tools/list */
   const tools = await rpc('tools/list', {});
   const names = (tools.result?.tools || []).map((t) => t.name);
-  check('tools/list が12ツールを返す', names.length === 12, `${names.length}件: ${names.join(', ')}`);
+  check("tools/list が13ツールを返す", names.length === 13, `${names.length}件: ${names.join(', ')}`);
   for (const expected of [
     'manual_search', 'get_process', 'get_numeric_standards', 'check_notation',
     'get_checklist', 'get_template', 'list_conflicts', 'get_accident_map',
-    'get_design_rules', 'format_telop', 'list_projects', 'get_project_rules'
+    'get_design_rules', 'format_telop', 'governance_audit', 'list_projects', 'get_project_rules'
   ]) {
     check(`ツール ${expected} が存在する`, names.includes(expected));
   }
@@ -184,6 +184,19 @@ const run = async () => {
   const gp = await rpc('tools/call', { name: 'get_project_rules', arguments: { project_id: 'not-exist' } });
   check('未登録案件で登録方法を案内する',
     bodyOf(gp).includes('generate-project-agent'), bodyOf(gp).slice(0, 80));
+
+  /* governance_audit */
+  const ga = await rpc('tools/call', { name: 'governance_audit', arguments: { only_failures: true } });
+  const gab = bodyOf(ga);
+  const nested = Number(process.env.VM_GOVERNANCE_DEPTH || 0) > 0;
+  if (nested) {
+    /* 監査の内部から呼ばれた場合は、再帰防止で省略されるのが正しい */
+    check('governance_audit が入れ子実行を拒否する', gab.includes('入れ子のため実行を省略'), gab.split('\n')[0]);
+  } else {
+    check('governance_audit が判定を返す', /ガバナンス監査結果: (GO|NO-GO)/.test(gab), gab.split('\n')[0]);
+    check('governance_audit が検査件数を返す', /検査 \d+件/.test(gab));
+    check('governance_audit が独断解決を禁じている', gab.includes('独断で解決しないでください'));
+  }
 
   /* 未知のメソッド */
   const unk = await rpc('tools/call', { name: 'no_such_tool', arguments: {} });
