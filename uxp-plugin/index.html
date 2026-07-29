@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>編集アシスタント</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-main">
+    <h1>編集アシスタント</h1>
+    <button type="button" id="reload" class="btn btn-sm">再読込</button>
+  </div>
+  <p class="seq" id="seq-info">シーケンス: 読み込み中…</p>
+  <p class="env" id="env-info"></p>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="機能の切り替え">
+  <button type="button" class="tab" role="tab" id="tab-material"  aria-controls="panel-material"  aria-selected="true">素材確認</button>
+  <button type="button" class="tab" role="tab" id="tab-submit"    aria-controls="panel-submit"    aria-selected="false" tabindex="-1">提出前</button>
+  <button type="button" class="tab" role="tab" id="tab-telop"     aria-controls="panel-telop"     aria-selected="false" tabindex="-1">テロップ</button>
+  <button type="button" class="tab" role="tab" id="tab-audio"     aria-controls="panel-audio"     aria-selected="false" tabindex="-1">音声設定</button>
+  <button type="button" class="tab" role="tab" id="tab-cut"       aria-controls="panel-cut"       aria-selected="false" tabindex="-1">カット記録</button>
+</nav>
+
+<main>
+  <section class="panel" id="panel-material" role="tabpanel" aria-labelledby="tab-material"></section>
+  <section class="panel" id="panel-submit"   role="tabpanel" aria-labelledby="tab-submit"   hidden></section>
+  <section class="panel" id="panel-telop"    role="tabpanel" aria-labelledby="tab-telop"    hidden></section>
+  <section class="panel" id="panel-audio"    role="tabpanel" aria-labelledby="tab-audio"    hidden></section>
+  <section class="panel" id="panel-cut"      role="tabpanel" aria-labelledby="tab-cut"      hidden></section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
