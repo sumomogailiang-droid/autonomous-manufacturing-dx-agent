@@ -573,16 +573,35 @@ function buildTelopPanel() {
   function renderResult(r) {
     clear(summary);
 
+    const layers = Math.max(1, r.verify.layers || 1);
+    const baseTrack = Number(trackSel.value);
+
     const okBox = el('div', 'alert ' + (r.verify.ok ? 'ok' : 'ng'));
     add(okBox,
       el('strong', null, r.verify.ok ? 'フレームずれなし' : 'フレームずれあり'),
       document.createTextNode(
         r.verify.ok
-          ? `${r.items.length}件すべて整数フレームに確定し、重なりもありません（${r.rate.label}）`
+          ? `${r.items.length}件すべて整数フレームに確定しました（${r.rate.label}）` +
+            (layers > 1
+              ? ` / 同時発言があるため V${baseTrack}〜V${baseTrack + layers - 1} の${layers}トラックに分けます`
+              : ` / すべて V${baseTrack} に収まります`)
           : r.verify.problems.map((p) => `${p.index}件目: ${p.detail}`).join(' / ')
       )
     );
     summary.appendChild(okBox);
+
+    if (layers > 1) {
+      const lay = el('div', 'alert warn');
+      add(lay,
+        el('strong', null, '同時発言があります'),
+        document.createTextNode(
+          'マニュアルの「発言が重なる場合、1人目のテロップを残し、2人目のテロップを上に重ねる」に従い、' +
+          `重なった分を上のトラックへ分けました。前のテロップを途中で消していません。` +
+          `使用トラック: V${baseTrack}〜V${baseTrack + layers - 1}`
+        )
+      );
+      summary.appendChild(lay);
+    }
 
     if (r.warnings.length) {
       const w = el('div', 'alert warn');
@@ -604,7 +623,7 @@ function buildTelopPanel() {
     const table = el('table');
     const thead = el('thead');
     const trh = el('tr');
-    for (const h of ['#', 'IN', 'OUT', 'F数', '字', 'テロップ']) {
+    for (const h of ['#', 'TR', 'IN', 'OUT', 'F数', '字', 'テロップ']) {
       const th = el('th', null, h);
       attr(th, { scope: 'col' });
       trh.appendChild(th);
@@ -615,6 +634,11 @@ function buildTelopPanel() {
     for (const it of r.items) {
       const tr = el('tr');
       tr.appendChild(el('td', null, String(it.index)));
+      /* 同時発言は上のトラックへ分かれるので、行き先を出す */
+      const trackNo = Number(trackSel.value) + (it.layer || 0);
+      const tdTr = el('td', 'num', 'V' + trackNo);
+      if (it.layer) tdTr.className = 'num layered';
+      tr.appendChild(tdTr);
       tr.appendChild(el('td', 'num', it.inTc));
       tr.appendChild(el('td', 'num', it.outTc));
       tr.appendChild(el('td', 'num', String(it.durationFrames)));
@@ -659,7 +683,9 @@ function buildTelopPanel() {
     try {
       const res = await adapter.insertTelops(r.items, {
         rate: r.rate,
+        /* 各テロップの行き先は trackIndex + layer（同時発言は上のトラックへ） */
         trackIndex: Number(trackSel.value) - 1,
+        layers: r.verify.layers || 1,
         srtText: r.srt,
         fileName: 'telop.srt'
       });

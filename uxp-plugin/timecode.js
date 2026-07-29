@@ -214,9 +214,12 @@
    * やること:
    *  1. in/out を秒からフレームへ確定（以降 丸めは発生しない）
    *  2. 子音発声の1フレーム前に出すオフセットを適用（マニュアル準拠）
-   *  3. 重なりを解消（前のテロップのoutを次のinまで詰める）
-   *  4. 最短表示フレーム数を確保
-   *  5. 隙間が1フレーム未満なら詰めて、チラつきを防ぐ
+   *  3. 同時発言はレイヤー（重ね段）へ分ける。前のテロップを削らない。
+   *     マニュアル「発言が重なる場合、2人目のテロップを上に重ねる」に従う。
+   *  4. 同じレイヤー内で、1〜2フレームの隙間を詰めてチラつきを防ぐ
+   *  5. 短すぎるテロップを警告する
+   *
+   * 各項目に layer（0 = 一番下のトラック）が入る。
    *
    * @param {Array<{start:number, end:number, text:string}>} items 秒単位
    * @param {object} opts
@@ -264,39 +267,87 @@
     }
 
     /* 並び順を保証（タイムコードが前後している素材への保険） */
-    out.sort((a, b) => a.inFrame - b.inFrame);
+    out.sort((a, b) => a.inFrame - b.inFrame || a.outFrame - b.outFrame);
 
-    /* 重なり・隙間の解消 */
+    /*
+     * 前倒しで生じた重なりを先に解消する。
+     *
+     * 連続するテロップ（前の終わり = 次の始まり）に前倒しを掛けると、
+     * 必ず leadFrames 分だけ重なる。これは同時発言ではなく、
+     * 「次のテロップが前を置き換える」だけなので、前を詰めるのが正しい。
+     *
+     * 重なりが leadFrames を超える場合は、本当に同時に喋っているとみなし、
+     * ここでは触らずレイヤー分けへ回す。
+     */
     for (let i = 0; i < out.length - 1; i++) {
       const cur = out[i];
       const next = out[i + 1];
-
-      if (cur.outFrame > next.inFrame) {
-        /* 重なり: 前を次の開始まで詰める */
-        const overlap = cur.outFrame - next.inFrame;
+      const overlap = cur.outFrame - next.inFrame;
+      if (overlap > 0 && overlap <= leadFrames && next.inFrame > cur.inFrame) {
         cur.outFrame = next.inFrame;
-        warnings.push({
-          index: cur.index, kind: '重なり',
-          detail: `次のテロップと${overlap}フレーム重なるため詰めました`
-        });
-      } else {
-        const gap = next.inFrame - cur.outFrame;
-        if (gap > 0 && gap <= closeGapFrames) {
-          /* 1〜2フレームの隙間はチラつくので詰める */
-          cur.outFrame = next.inFrame;
-        }
-      }
-
-      /* 詰めた結果、短くなりすぎた場合 */
-      if (cur.outFrame - cur.inFrame < minFrames) {
-        warnings.push({
-          index: cur.index, kind: '短すぎ',
-          detail: `${cur.outFrame - cur.inFrame}フレーム（最低${minFrames}）。文字数を減らすか前後の間隔を空けてください`
-        });
       }
     }
 
-    /* 全項目の整合性を最終確認 */
+    /*
+     * レイヤー（重ね段）の割り当て。
+     *
+     * 同時発言では、1本のトラックに2つのテロップを置けない。
+     * マニュアルは「発言が重なる場合、1人目のテロップを残し、
+     * 2人目のテロップを上に重ねる」と定めているため、
+     * 重なったものは上のトラックへ分ける。
+     *
+     * 前のテロップを削って重なりを消す方法は取らない。
+     * 発言が終わる前にテロップを消すことになり、マニュアル違反になるため。
+     */
+    const layerEnd = [];   // layerEnd[i] = そのレイヤーで最後に使い終わったフレーム
+    for (const it of out) {
+      let layer = 0;
+      while (layer < layerEnd.length && layerEnd[layer] > it.inFrame) layer++;
+      it.layer = layer;
+      layerEnd[layer] = it.outFrame;
+    }
+
+    const maxLayer = Math.max(0, ...out.map((i) => i.layer));
+    if (maxLayer > 0) {
+      const overlapped = out.filter((i) => i.layer > 0).length;
+      warnings.push({
+        index: 0, kind: '同時発言',
+        detail: `${overlapped}件が他のテロップと重なるため、${maxLayer}段上のトラックへ分けます`
+      });
+    }
+
+    /*
+     * 隙間詰めと最短長の確認は、同じレイヤー内でのみ行う。
+     * レイヤーが違えば同時に出てよいので、詰める必要がない。
+     */
+    const byLayer = new Map();
+    for (const it of out) {
+      if (!byLayer.has(it.layer)) byLayer.set(it.layer, []);
+      byLayer.get(it.layer).push(it);
+    }
+
+    for (const items of byLayer.values()) {
+      for (let i = 0; i < items.length - 1; i++) {
+        const cur = items[i];
+        const next = items[i + 1];
+        const gap = next.inFrame - cur.outFrame;
+        /* 1〜2フレームの隙間はチラつくので詰める */
+        if (gap > 0 && gap <= closeGapFrames) cur.outFrame = next.inFrame;
+      }
+      for (const it of items) {
+        if (it.outFrame - it.inFrame < minFrames) {
+          warnings.push({
+            index: it.index, kind: '短すぎ',
+            detail: `${it.outFrame - it.inFrame}フレーム（最低${minFrames}）。元の発言が短いため、読み切れない可能性があります`
+          });
+        }
+      }
+    }
+
+    /*
+     * 表示用の値を確定させる。
+     * ここまででフレーム番号は確定しているので、変換に丸めは入らない。
+     */
     for (const it of out) {
       it.durationFrames = it.outFrame - it.inFrame;
       it.inTc = framesToTimecode(it.inFrame, rate);
@@ -309,7 +360,10 @@
       }
     }
 
-    return { items: out, warnings, rate };
+    /* 表示順を安定させる（レイヤーをまたいでも時刻順） */
+    out.forEach((it, i) => { it.index = i + 1; });
+
+    return { items: out, warnings, rate, layers: Math.max(1, ...out.map((i) => i.layer + 1)) };
   }
 
   /**
@@ -318,19 +372,39 @@
    */
   function verifyPlacement(items) {
     const problems = [];
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
+
+    for (const it of items) {
       if (!Number.isInteger(it.inFrame) || !Number.isInteger(it.outFrame)) {
         problems.push({ index: it.index, detail: 'フレーム番号が整数ではありません' });
       }
       if (it.outFrame <= it.inFrame) {
         problems.push({ index: it.index, detail: '長さが0以下です' });
       }
-      if (i > 0 && items[i - 1].outFrame > it.inFrame) {
-        problems.push({ index: it.index, detail: `前のテロップと重なっています（${items[i - 1].outFrame} > ${it.inFrame}）` });
+    }
+
+    /*
+     * 重なりは「同じレイヤー内」だけを見る。
+     * 別レイヤー（上のトラック）へ分けたものは、同時に出てよい。
+     */
+    const byLayer = new Map();
+    for (const it of items) {
+      const l = it.layer || 0;
+      if (!byLayer.has(l)) byLayer.set(l, []);
+      byLayer.get(l).push(it);
+    }
+
+    for (const [layer, list] of byLayer) {
+      for (let i = 1; i < list.length; i++) {
+        if (list[i - 1].outFrame > list[i].inFrame) {
+          problems.push({
+            index: list[i].index,
+            detail: `同じトラック（${layer + 1}段目）で重なっています（${list[i - 1].outFrame} > ${list[i].inFrame}）`
+          });
+        }
       }
     }
-    return { ok: problems.length === 0, problems };
+
+    return { ok: problems.length === 0, problems, layers: byLayer.size };
   }
 
   /* ---------------------------------------------------------------- */

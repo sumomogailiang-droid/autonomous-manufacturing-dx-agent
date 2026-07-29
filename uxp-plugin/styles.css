@@ -311,3 +311,6 @@ td.num { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowr
 .help strong { display: block; color: var(--tx); font-size: 11.5px; margin-bottom: 3px; }
 .help p { margin: 0 0 4px; }
 .help p:last-child { margin-bottom: 0; }
+
+/* 同時発言で上のトラックへ分けたテロップ */
+td.num.layered { color: var(--warn); font-weight: 700; }

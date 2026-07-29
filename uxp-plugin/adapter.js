@@ -313,7 +313,9 @@ const adapter = {
 
     if (!this.isPremiere()) {
       mockState.insertedTelops = items.map((i) => ({
-        inFrame: i.inFrame, outFrame: i.outFrame, text: i.text
+        inFrame: i.inFrame, outFrame: i.outFrame, text: i.text,
+        layer: i.layer || 0,
+        track: (Number.isFinite(o.trackIndex) ? o.trackIndex : 1) + (i.layer || 0)
       }));
       return {
         method: 'mock',
@@ -343,14 +345,20 @@ const adapter = {
         let placed = 0;
         for (const it of items) {
           const t = await ppro.TickTime.createWithTicks(String(frameToTicks(it.inFrame)));
-          const mgt = await seq.importMGT(o.mogrtPath, t, trackIndex, 0);
+          /* 同時発言は上のトラックへ（マニュアル: 2人目のテロップを上に重ねる） */
+          const target = trackIndex + (it.layer || 0);
+          const mgt = await seq.importMGT(o.mogrtPath, t, target, 0);
           if (mgt) placed++;
         }
         if (placed > 0) {
           return {
             method: 'mogrt',
             placed,
-            note: `MOGRTテンプレートを V${trackIndex + 1} へ ${placed}件 配置しました。テキストの流し込みは手動で行ってください。`
+            note: `MOGRTテンプレートを ${placed}件 配置しました` +
+                  (o.layers > 1
+                    ? `（V${trackIndex + 1}〜V${trackIndex + o.layers}。同時発言を上のトラックへ分けています）`
+                    : `（V${trackIndex + 1}）`) +
+                  '。テキストの流し込みは手動で行ってください。'
           };
         }
       } catch (e) {

@@ -143,8 +143,8 @@ check('全項目が整数フレームになる',
 check('子音1フレーム前の前倒しが適用される',
   snapped.items[0].inFrame === 29, `実際: ${snapped.items[0].inFrame}（1.0秒=30F の1つ前）`);
 
-check('重なりが解消される',
-  snapped.items.every((it, i) => i === 0 || snapped.items[i - 1].outFrame <= it.inFrame));
+check('重ならない入力は全て同じレイヤーになる',
+  snapped.items.every((it) => it.layer === 0));
 
 const verify = TC.verifyPlacement(snapped.items);
 check('配置の検証に合格する', verify.ok, JSON.stringify(verify.problems));
@@ -159,9 +159,59 @@ const overlapped = TC.snapToFrames([
   { start: 0, end: 5, text: 'ながいテロップ' },
   { start: 2, end: 6, text: 'かぶってるテロップ' }
 ], { rate: r30, leadFrames: 0 });
-check('重なり入力で警告が出る', overlapped.warnings.some((w) => w.kind === '重なり'));
-check('重なり解消後は重なっていない',
-  TC.verifyPlacement(overlapped.items).ok);
+check('同時発言で警告が出る', overlapped.warnings.some((w) => w.kind === '同時発言'));
+check('同時発言が別レイヤーへ分かれる',
+  overlapped.items[0].layer === 0 && overlapped.items[1].layer === 1,
+  `layer: ${overlapped.items.map((i) => i.layer).join(',')}`);
+check('同時発言でも前のテロップが削られない',
+  overlapped.items[0].outFrame === TC.secondsToFrames(5, r30),
+  `1件目のout: ${overlapped.items[0].outFrame}（期待 ${TC.secondsToFrames(5, r30)}）`);
+check('レイヤー分離後は検証に合格する', TC.verifyPlacement(overlapped.items).ok,
+  JSON.stringify(TC.verifyPlacement(overlapped.items).problems));
+check('長さ0のテロップが生まれない',
+  overlapped.items.every((i) => i.outFrame > i.inFrame));
+
+/* 実データで起きた形: 長い発言の途中に短い相槌が入る */
+const interject = TC.snapToFrames([
+  { start: 89.550, end: 92.590, text: 'はい、ということで、名古屋校にやってまいりました' },
+  { start: 90.000, end: 91.000, text: 'おめでとうございます' }
+], { rate: r2997, leadFrames: 1 });
+check('長い発言に短い相槌が重なっても壊れない',
+  TC.verifyPlacement(interject.items).ok,
+  JSON.stringify(TC.verifyPlacement(interject.items).problems));
+check('相槌が上のレイヤーへ行く',
+  interject.items.some((i) => i.layer === 1));
+
+/* 同じ開始時刻の2発言 */
+const sameStart = TC.snapToFrames([
+  { start: 93.570, end: 94.570, text: 'はい、よろしくお願いします' },
+  { start: 93.570, end: 95.090, text: 'めっちゃDMが来て' }
+], { rate: r2997, leadFrames: 1 });
+check('同じ開始時刻でも検証に合格する',
+  TC.verifyPlacement(sameStart.items).ok,
+  JSON.stringify(TC.verifyPlacement(sameStart.items).problems));
+check('同じ開始時刻は別レイヤーになる',
+  sameStart.items[0].layer !== sameStart.items[1].layer);
+
+/* 3つ以上の同時重なり */
+const triple = TC.snapToFrames([
+  { start: 0, end: 10, text: 'A' },
+  { start: 1, end: 9, text: 'B' },
+  { start: 2, end: 8, text: 'C' }
+], { rate: r30, leadFrames: 0 });
+check('3件同時でも3レイヤーへ分かれる',
+  new Set(triple.items.map((i) => i.layer)).size === 3,
+  `layer: ${triple.items.map((i) => i.layer).join(',')}`);
+check('3件同時でも検証に合格する', TC.verifyPlacement(triple.items).ok);
+
+/* 重なりが解消したらレイヤー0へ戻る */
+const reuse = TC.snapToFrames([
+  { start: 0, end: 5, text: 'A' },
+  { start: 1, end: 3, text: 'B（重なる）' },
+  { start: 10, end: 12, text: 'C（重ならない）' }
+], { rate: r30, leadFrames: 0 });
+check('重なりが終わればレイヤー0を再利用する',
+  reuse.items[2].layer === 0, `layer: ${reuse.items.map((i) => i.layer).join(',')}`);
 
 /* 順序が逆の入力 */
 const reversed = TC.snapToFrames([
