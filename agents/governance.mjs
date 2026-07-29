@@ -478,6 +478,7 @@ const pluginFiles = [
   'uxp-plugin/app.js',
   'uxp-plugin/adapter.js',
   'uxp-plugin/telop.js',
+  'uxp-plugin/timecode.js',
   'uxp-plugin/data/manual-snapshot.js'
 ];
 const esmHits = [];
@@ -504,6 +505,75 @@ record({
   detail: esmHits.length ? esmHits.join(' / ') : `${pluginFiles.length}ファイルすべて古典的スクリプト`,
   action: 'UXPは type="module" / import / export に対応していません。グローバル登録方式にしてください'
 });
+
+/*
+ * フレーム計算の検証。
+ * ここが狂うとテロップが必ずフレームずれするため、出荷ゲートに含める。
+ */
+const TCU = safe(() => require(resolve(ROOT, 'uxp-plugin/timecode.js')));
+
+record({
+  id: 'C7-10', category: CAT7, severity: 'blocker',
+  name: 'フレーム計算モジュールが読み込める',
+  pass: !!TCU && typeof TCU.snapToFrames === 'function',
+  detail: TCU ? 'timecode.js OK' : '読み込み失敗',
+  action: 'uxp-plugin/timecode.js を確認してください'
+});
+
+if (TCU) {
+  /* 29.97DF の既知値。ここが合わないとタイムコード表示が全部ずれる */
+  const df = TCU.RATES['29.97'];
+  const knownOk =
+    TCU.framesToTimecode(1800, df) === '00;01;00;02' &&
+    TCU.framesToTimecode(17982, df) === '00;10;00;00' &&
+    TCU.framesToTimecode(107892, df) === '01;00;00;00';
+  record({
+    id: 'C7-11', category: CAT7, severity: 'blocker',
+    name: '29.97ドロップフレームの変換が正しい',
+    pass: knownOk,
+    detail: knownOk ? 'SMPTE既知値と一致' : `1800F→${TCU.framesToTimecode(1800, df)}（期待 00;01;00;02）`,
+    action: 'node tools/test-timecode.mjs で詳細を確認してください'
+  });
+
+  /* 29.97を30fpsとして計算していないか（1分で約1.8フレームずれる） */
+  const oneMin = TCU.secondsToFrames(60, df);
+  record({
+    id: 'C7-12', category: CAT7, severity: 'blocker',
+    name: '29.97fps を30fpsとして計算していない',
+    pass: oneMin === 1798,
+    detail: `60秒 = ${oneMin}フレーム（30fps計算なら1800）`,
+    action: 'timecode.js の secondsToFrames が rate.exact を使っているか確認してください'
+  });
+
+  /* 累積ずれが起きないこと */
+  const many = [];
+  for (let i = 0; i < 500; i++) many.push({ start: i * 2, end: i * 2 + 1.5, text: 'x' });
+  const snapped = TCU.snapToFrames(many, { rate: df, leadFrames: 0, minFrames: 1 });
+  const expected = TCU.secondsToFrames(499 * 2, df);
+  const allInt = snapped.items.every((i) => Number.isInteger(i.inFrame) && Number.isInteger(i.outFrame));
+  record({
+    id: 'C7-13', category: CAT7, severity: 'blocker',
+    name: 'テロップ500件で累積フレームずれが起きない',
+    pass: snapped.items[499].inFrame === expected && allInt,
+    detail: allInt
+      ? `最終項目 ${snapped.items[499].inFrame}（期待 ${expected}）`
+      : '整数でないフレーム番号があります',
+    action: 'node tools/test-timecode.mjs を実行してください'
+  });
+
+  /* 配置検証が重なりを検出できること（検証機能自体の健全性） */
+  const bad = [
+    { index: 1, inFrame: 0, outFrame: 100 },
+    { index: 2, inFrame: 50, outFrame: 150 }
+  ];
+  record({
+    id: 'C7-14', category: CAT7, severity: 'warn',
+    name: '配置検証が重なりを検出できる',
+    pass: TCU.verifyPlacement(bad).ok === false,
+    detail: '重なった入力を不合格と判定',
+    action: 'verifyPlacement を確認してください'
+  });
+}
 
 /* Premiere API の未検証を隠していないか */
 const adapterSrc = read('uxp-plugin/adapter.js');

@@ -22,10 +22,11 @@
   const adapter = globalThis.PremiereAdapter;
   const T = globalThis.TelopUtils || {};
   const { formatTelop, parseSubtitles, formatSubtitles, toSrt, checkNotation } = T;
+  const TC = globalThis.TimecodeUtils;
   const DATA = globalThis.MANUAL_SNAPSHOT;
 
   /* 依存が読めていない場合は、黙って白画面にせず画面へ出す */
-  if (!adapter || !DATA || !formatTelop) {
+  if (!adapter || !DATA || !formatTelop || !TC) {
     document.addEventListener('DOMContentLoaded', function () {
       const host = document.getElementById('panel-material') || document.body;
       const box = document.createElement('div');
@@ -33,6 +34,7 @@
       const missing = [
         !adapter ? 'adapter.js' : null,
         !formatTelop ? 'telop.js' : null,
+        !TC ? 'timecode.js' : null,
         !DATA ? 'data/manual-snapshot.js' : null
       ].filter(Boolean).join(', ');
       box.textContent = '読み込めなかったファイル: ' + missing;
@@ -300,126 +302,368 @@ function buildTelopPanel() {
   );
   host.appendChild(note);
 
+  /* ---------------- 入力 ---------------- */
+
   const card = el('div', 'card');
 
   const inLabel = el('label', 'field');
-  add(inLabel, el('span', null, '文字起こし（テキスト / SRT / VTT を貼り付け）'));
+  add(inLabel, el('span', null, 'タイムコード付き文字起こし（SRT / VTT / 「TC テキスト」形式）'));
   const ta = el('textarea');
-  attr(ta, { id: 'telop-in', placeholder: '今日はですね、動画編集の基本的な流れについて解説していきます。' });
+  attr(ta, {
+    id: 'telop-in',
+    placeholder:
+      '1\n00:00:01,000 --> 00:00:03,500\n今日はですね、動画編集の基本的な流れについて解説していきます\n\n' +
+      '2\n00:00:03,500 --> 00:00:06,000\nまず最初にやることは素材確認です'
+  });
   inLabel.appendChild(ta);
   card.appendChild(inLabel);
 
+  /* フレームレート */
+  const rateRow = el('div', 'inline');
+
+  const rateLabel = el('label', 'field');
+  add(rateLabel, el('span', null, 'フレームレート'));
+  const rateSel = el('select');
+  attr(rateSel, { id: 'telop-rate' });
+  const RATE_KEYS = ['23.976', '24', '25', '29.97', '29.97ND', '30', '50', '59.94', '60'];
+  for (const k of RATE_KEYS) {
+    const o = el('option', null, TC.RATES[k].label);
+    attr(o, { value: k });
+    rateSel.appendChild(o);
+  }
+  rateSel.value = '29.97';
+  rateLabel.appendChild(rateSel);
+  rateRow.appendChild(rateLabel);
+
+  const detectBtn = el('button', 'btn btn-sm', 'シーケンスから取得');
+  attr(detectBtn, { type: 'button' });
+  rateRow.appendChild(detectBtn);
+  card.appendChild(rateRow);
+
+  const rateNote = el('p', 'stat');
+  attr(rateNote, { id: 'telop-rate-note' });
+  rateNote.textContent = 'シーケンスと違うfpsで計算するとフレームずれの原因になります。';
+  card.appendChild(rateNote);
+
+  /* 詳細設定 */
   const opts = el('div', 'inline');
+
   const maxLabel = el('label', 'field narrow');
   add(maxLabel, el('span', null, '1行の上限'));
   const maxIn = el('input');
   attr(maxIn, { type: 'number', id: 'telop-max', value: '18', min: '8', max: '30' });
   maxLabel.appendChild(maxIn);
+  opts.appendChild(maxLabel);
 
-  const spkLabel = el('label', 'field');
-  add(spkLabel, el('span', null, '話者（任意）'));
-  const spkIn = el('input');
-  attr(spkIn, { type: 'text', id: 'telop-speaker', placeholder: '木村さん' });
-  spkLabel.appendChild(spkIn);
+  const leadLabel = el('label', 'field narrow');
+  add(leadLabel, el('span', null, '前倒しF'));
+  const leadIn = el('input');
+  attr(leadIn, { type: 'number', id: 'telop-lead', value: '1', min: '0', max: '10' });
+  leadLabel.appendChild(leadIn);
+  opts.appendChild(leadLabel);
 
-  const runBtn = el('button', 'btn btn-primary', '整形する');
-  attr(runBtn, { type: 'button' });
+  const trackLabel = el('label', 'field narrow');
+  add(trackLabel, el('span', null, '挿入先'));
+  const trackSel = el('select');
+  attr(trackSel, { id: 'telop-track' });
+  for (let i = 1; i <= 8; i++) {
+    const o = el('option', null, 'V' + i);
+    attr(o, { value: String(i) });
+    trackSel.appendChild(o);
+  }
+  trackSel.value = '2';
+  trackLabel.appendChild(trackSel);
+  opts.appendChild(trackLabel);
 
-  add(opts, maxLabel, spkLabel, runBtn);
+  const spLabel = el('label', 'field');
+  add(spLabel, el('span', null, '話者（任意）'));
+  const spIn = el('input');
+  attr(spIn, { type: 'text', id: 'telop-speaker', placeholder: '木村さん' });
+  spLabel.appendChild(spIn);
+  opts.appendChild(spLabel);
+
   card.appendChild(opts);
+
+  const leadNote = el('p', 'stat');
+  leadNote.textContent = '前倒しF: 子音発声の何フレーム前に出すか。マニュアルの目安は1フレーム前。';
+  card.appendChild(leadNote);
+
+  const runRow = el('div', 'btn-row');
+  const runBtn = el('button', 'btn btn-primary', '実行（テロップを作成）');
+  attr(runBtn, { type: 'button', id: 'telop-run' });
+  const dryBtn = el('button', 'btn', '計算だけ試す');
+  attr(dryBtn, { type: 'button' });
+  add(runRow, runBtn, dryBtn);
+  card.appendChild(runRow);
+
   host.appendChild(card);
 
-  /* 結果 */
-  const resCard = el('div', 'card');
-  resCard.appendChild(el('h2', null, '整形結果'));
-  const stat = el('p', 'stat');
-  const out = el('pre', 'output');
-  const warnHost = el('div');
-  resCard.appendChild(stat);
-  resCard.appendChild(out);
-  resCard.appendChild(warnHost);
+  /* ---------------- 結果 ---------------- */
 
-  const btnRow = el('div', 'btn-row');
-  const copyBtn = el('button', 'btn btn-primary btn-sm', 'テロップをコピー');
-  const srtBtn = el('button', 'btn btn-sm', 'SRTでコピー');
-  const markBtn = el('button', 'btn btn-sm', '現在位置にマーカー');
-  for (const b of [copyBtn, srtBtn, markBtn]) attr(b, { type: 'button' });
-  add(btnRow, copyBtn, srtBtn, markBtn);
-  resCard.appendChild(btnRow);
+  const resCard = el('div', 'card');
+  resCard.appendChild(el('h2', null, '配置結果'));
+
+  const summary = el('div');
+  attr(summary, { id: 'telop-summary' });
+  resCard.appendChild(summary);
+
+  const tableWrap = el('div', 'table-wrap');
+  attr(tableWrap, { id: 'telop-table-wrap' });
+  tableWrap.hidden = true;
+  resCard.appendChild(tableWrap);
+
+  const outRow = el('div', 'btn-row');
+  const copySrt = el('button', 'btn', 'SRTでコピー');
+  attr(copySrt, { type: 'button' });
+  const copyText = el('button', 'btn', 'テロップ本文をコピー');
+  attr(copyText, { type: 'button' });
+  const saveSrt = el('button', 'btn', 'SRTを保存');
+  attr(saveSrt, { type: 'button' });
+  add(outRow, copySrt, copyText, saveSrt);
+  resCard.appendChild(outRow);
+
   host.appendChild(resCard);
 
-  let lastLines = [];
-  let lastSrt = '';
+  /* ---------------- 基準 ---------------- */
 
-  runBtn.addEventListener('click', () => {
-    const raw = ta.value;
-    if (!raw.trim()) { toast('文字起こしを貼り付けてください'); return; }
-
-    const maxChars = Number(maxIn.value) || 18;
-    const dictionary = DATA.dictionary;
-
-    clear(warnHost);
-    const subs = parseSubtitles(raw);
-
-    if (subs.length) {
-      /* SRT / VTT として処理（タイムコードを保持） */
-      const items = formatSubtitles(subs, { maxChars, dictionary });
-      lastLines = items.map((i) => i.text);
-      lastSrt = toSrt(items);
-      out.textContent = items.map((i) => `${i.start} → ${i.end}\n${i.text}`).join('\n\n');
-      stat.textContent = `字幕 ${subs.length}ブロック → テロップ ${items.length}行（タイムコード保持）`;
-
-      const over = items.filter((i) => i.chars > maxChars);
-      renderWarnings(warnHost, over.map((i) => `${i.index}行目: ${i.chars}文字（上限${maxChars}）`), dictionary, lastLines);
-    } else {
-      /* プレーンテキストとして処理 */
-      const { lines, warnings, notation } = formatTelop(raw, { maxChars, dictionary });
-      lastLines = lines;
-      lastSrt = '';
-      out.textContent = lines.join('\n');
-      stat.textContent = `${lines.length}行 / 1行上限 ${maxChars}文字`
-        + (spkIn.value ? ` / 話者: ${spkIn.value}` : '');
-
-      renderWarningsDirect(warnHost, warnings, notation);
-    }
-
-    /* 人が確認すべき点は必ず出す */
-    const manual = el('div', 'alert imp');
-    const ul = el('ul');
-    for (const t of [
-      '話し言葉を不自然に直していないか（エンタメ・口語チャンネルでは直しすぎない）',
-      '主語がない行に丸括弧で主語を補う必要がないか',
-      '2行にする場合は上を短く、下を長くする',
-      '子音発声の1フレーム前に表示する',
-      '固有名詞は公式サイトで裏取りする',
-      ...(spkIn.value ? ['複数話者の場合、話者ごとのテロップ色が統一されているか'] : [])
-    ]) ul.appendChild(el('li', null, t));
-    add(manual, el('strong', null, '人が確認すること'), ul);
-    warnHost.appendChild(manual);
-  });
-
-  copyBtn.addEventListener('click', async () => {
-    if (!lastLines.length) { toast('先に整形してください'); return; }
-    const r = await adapter.copyToClipboard(lastLines.join('\n'));
-    toast(r.message);
-  });
-
-  srtBtn.addEventListener('click', async () => {
-    if (!lastSrt) { toast('SRT/VTTを貼り付けた場合のみ使えます'); return; }
-    const r = await adapter.copyToClipboard(lastSrt);
-    toast(r.message);
-  });
-
-  markBtn.addEventListener('click', async () => {
-    const r = await adapter.addMarker({ name: 'テロップ確認', comment: lastLines[0] || '' });
-    toast(r.message);
-  });
-
-  /* テロップの数値基準 */
   const stdCard = el('div', 'card');
   stdCard.appendChild(el('h2', null, 'テロップの基準'));
-  stdCard.appendChild(numericTable(DATA.telopStandards));
+  const ul = el('ul');
+  for (const t of DATA.telopStandards || []) {
+    ul.appendChild(el('li', null, `${t.name}: ${t.value}${t.unit && t.unit !== '—' ? ' ' + t.unit : ''}`));
+  }
+  stdCard.appendChild(ul);
+  const chk = el('ul');
+  for (const t of [
+    '話し言葉を不自然に直していないか（エンタメ・口語チャンネルでは直しすぎない）',
+    '主語がない行に丸括弧で主語を補う必要がないか',
+    '2行にする場合は上を短く、下を長くする',
+    '固有名詞は公式サイトで裏取りする'
+  ]) ul.appendChild(el('li', null, t));
+  stdCard.appendChild(chk);
   host.appendChild(stdCard);
+
+  /* ---------------- 処理 ---------------- */
+
+  let lastResult = null;
+
+  function currentRate() {
+    return TC.RATES[rateSel.value] || TC.RATES['29.97'];
+  }
+
+  /** 入力を {start,end,text} の配列へ。秒単位。 */
+  function parseInput(raw, rate) {
+    const blocks = parseSubtitles(raw);
+    if (blocks.length) {
+      return blocks.map((b) => ({
+        start: TC.framesToSeconds(TC.timecodeToFrames(b.start, rate), rate),
+        end: TC.framesToSeconds(TC.timecodeToFrames(b.end, rate), rate),
+        text: b.text,
+        sourceIndex: b.index
+      }));
+    }
+
+    /* 「00:00:01:15  テキスト」形式（開始TCのみ）にも対応する */
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const rows = [];
+    for (const line of lines) {
+      const m = /^(\d{1,2}[:;]\d{2}[:;]\d{2}(?:[:;.,]\d{1,3})?)\s+(.+)$/.exec(line);
+      if (!m) continue;
+      rows.push({ frame: TC.timecodeToFrames(m[1], rate), text: m[2].trim() });
+    }
+    if (!rows.length) return [];
+
+    /* 終了時刻がないので、次の開始まで表示する。最後は3秒。 */
+    return rows.map((r, i) => {
+      const next = rows[i + 1];
+      const endFrame = next ? next.frame : r.frame + Math.round(rate.exact * 3);
+      return {
+        start: TC.framesToSeconds(r.frame, rate),
+        end: TC.framesToSeconds(endFrame, rate),
+        text: r.text,
+        sourceIndex: i + 1
+      };
+    });
+  }
+
+  /** 整形 → フレーム確定 まで行う。配置はしない。 */
+  function compute() {
+    const raw = ta.value;
+    if (!raw.trim()) {
+      toast('文字起こしを貼り付けてください');
+      return null;
+    }
+
+    const rate = currentRate();
+    const maxChars = Number(maxIn.value) || 18;
+    const leadFrames = Number(leadIn.value);
+
+    const parsed = parseInput(raw, rate);
+    if (!parsed.length) {
+      toast('タイムコードを読み取れませんでした。SRT形式か「TC テキスト」形式で貼ってください');
+      return null;
+    }
+
+    /* 1ブロックが複数行になる場合は、表示時間を行数で分ける */
+    const expanded = [];
+    for (const b of parsed) {
+      const { lines } = formatTelop(b.text, { maxChars, dictionary: DATA.dictionary });
+      if (!lines.length) continue;
+      const span = b.end - b.start;
+      const per = span / lines.length;
+      lines.forEach((text, i) => {
+        expanded.push({
+          start: b.start + per * i,
+          end: b.start + per * (i + 1),
+          text,
+          sourceIndex: b.sourceIndex
+        });
+      });
+    }
+
+    const snapped = TC.snapToFrames(expanded, { rate, leadFrames, minFrames: 12 });
+    const verify = TC.verifyPlacement(snapped.items);
+    const notation = checkNotation(snapped.items.map((i) => i.text), DATA.dictionary);
+
+    const srt = snapped.items
+      .map((it, i) =>
+        `${i + 1}\n${TC.framesToSrtTime(it.inFrame, rate)} --> ${TC.framesToSrtTime(it.outFrame, rate)}\n${it.text}\n`)
+      .join('\n');
+
+    lastResult = { items: snapped.items, warnings: snapped.warnings, verify, notation, srt, rate };
+    renderResult(lastResult);
+    return lastResult;
+  }
+
+  function renderResult(r) {
+    clear(summary);
+
+    const okBox = el('div', 'alert ' + (r.verify.ok ? 'ok' : 'ng'));
+    add(okBox,
+      el('strong', null, r.verify.ok ? 'フレームずれなし' : 'フレームずれあり'),
+      document.createTextNode(
+        r.verify.ok
+          ? `${r.items.length}件すべて整数フレームに確定し、重なりもありません（${r.rate.label}）`
+          : r.verify.problems.map((p) => `${p.index}件目: ${p.detail}`).join(' / ')
+      )
+    );
+    summary.appendChild(okBox);
+
+    if (r.warnings.length) {
+      const w = el('div', 'alert warn');
+      add(w, el('strong', null, `調整した箇所 ${r.warnings.length}件`),
+        document.createTextNode(r.warnings.slice(0, 6).map((x) => `${x.index}件目 ${x.kind}: ${x.detail}`).join(' / ')));
+      summary.appendChild(w);
+    }
+
+    if (r.notation.length) {
+      const n = el('div', 'alert ng');
+      add(n, el('strong', null, `表記揺れ ${r.notation.length}件`),
+        document.createTextNode(r.notation.slice(0, 8).map((x) => `${x.line}行目 ${x.wrong}→${x.correct}`).join(' / ')));
+      summary.appendChild(n);
+    }
+
+    /* 表 */
+    const wrap = clear(document.getElementById('telop-table-wrap'));
+    wrap.hidden = false;
+    const table = el('table');
+    const thead = el('thead');
+    const trh = el('tr');
+    for (const h of ['#', 'IN', 'OUT', 'F数', '字', 'テロップ']) {
+      const th = el('th', null, h);
+      attr(th, { scope: 'col' });
+      trh.appendChild(th);
+    }
+    thead.appendChild(trh);
+    table.appendChild(thead);
+    const tb = el('tbody');
+    for (const it of r.items) {
+      const tr = el('tr');
+      tr.appendChild(el('td', null, String(it.index)));
+      tr.appendChild(el('td', 'num', it.inTc));
+      tr.appendChild(el('td', 'num', it.outTc));
+      tr.appendChild(el('td', 'num', String(it.durationFrames)));
+      tr.appendChild(el('td', 'num', String([...it.text].length)));
+      tr.appendChild(el('td', null, it.text));
+      tb.appendChild(tr);
+    }
+    table.appendChild(tb);
+    wrap.appendChild(table);
+  }
+
+  detectBtn.addEventListener('click', async () => {
+    try {
+      const info = await adapter.getSequenceFrameRate();
+      if (!info) { toast('シーケンスからfpsを取得できませんでした'); return; }
+      const resolved = TC.resolveRate(info.fps, info.dropFrame);
+      const key = Object.keys(TC.RATES).find((k) => TC.RATES[k].label === resolved.label);
+      if (key) rateSel.value = key;
+      rateNote.textContent = `シーケンスから取得: ${info.fps.toFixed(4)}fps → ${resolved.label}`;
+      toast(`${resolved.label} を設定しました`);
+    } catch (e) {
+      toast('取得に失敗: ' + e.message);
+    }
+  });
+
+  dryBtn.addEventListener('click', () => {
+    const r = compute();
+    if (r) toast(`${r.items.length}件を計算しました（配置はしていません）`);
+  });
+
+  runBtn.addEventListener('click', async () => {
+    const r = compute();
+    if (!r) return;
+
+    if (!r.verify.ok) {
+      toast('フレームずれが残っているため配置しませんでした');
+      return;
+    }
+
+    runBtn.disabled = true;
+    runBtn.textContent = '配置中…';
+    try {
+      const res = await adapter.insertTelops(r.items, {
+        rate: r.rate,
+        trackIndex: Number(trackSel.value) - 1,
+        srtText: r.srt,
+        fileName: 'telop.srt'
+      });
+      const box = el('div', 'alert ok');
+      add(box, el('strong', null, `配置しました（${res.method}）`), document.createTextNode(res.note));
+      summary.insertBefore(box, summary.firstChild);
+      toast(`${res.placed}件を配置しました`);
+    } catch (e) {
+      const box = el('div', 'alert ng');
+      add(box, el('strong', null, '配置に失敗しました'), document.createTextNode(e.message));
+      summary.insertBefore(box, summary.firstChild);
+      toast('配置に失敗しました');
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = '実行（テロップを作成）';
+    }
+  });
+
+  copySrt.addEventListener('click', async () => {
+    if (!lastResult) { toast('先に実行してください'); return; }
+    await adapter.copyToClipboard(lastResult.srt);
+    toast('SRTをコピーしました');
+  });
+
+  copyText.addEventListener('click', async () => {
+    if (!lastResult) { toast('先に実行してください'); return; }
+    await adapter.copyToClipboard(lastResult.items.map((i) => i.text).join('\n'));
+    toast('テロップ本文をコピーしました');
+  });
+
+  saveSrt.addEventListener('click', async () => {
+    if (!lastResult) { toast('先に実行してください'); return; }
+    try {
+      const path = await adapter.writeSrtFile(lastResult.srt, 'telop.srt');
+      toast('保存しました: ' + path);
+    } catch (e) {
+      toast('保存に失敗: ' + e.message);
+    }
+  });
 }
 
 function renderWarningsDirect(host, warnings, notation) {
