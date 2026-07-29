@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "video-manual": {
+      "command": "node",
+      "args": ["agents/mcp-server.mjs"],
+      "env": {}
+    }
+  }
+}

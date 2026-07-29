@@ -1,0 +1,10 @@
+# 案件マニュアルはクライアント情報を含むため、リポジトリへコミットしない。
+# 各自のローカルで generate-project-agent.mjs により生成する。
+agents/knowledge/projects/*.md
+!agents/knowledge/projects/README.md
+
+# 取り込み元の案件マニュアル原本
+manuals/
+
+node_modules/
+.DS_Store

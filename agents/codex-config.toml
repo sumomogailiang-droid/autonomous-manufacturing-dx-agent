@@ -1,0 +1,12 @@
+# Codex CLI 用のMCPサーバー設定
+#
+# ~/.codex/config.toml へ以下を追記してください。
+# パスはこのリポジトリのルートからの相対パスです。
+# 別ディレクトリから起動する場合は args を絶対パスにしてください。
+
+[mcp_servers.video-manual]
+command = "node"
+args = ["agents/mcp-server.mjs"]
+
+# 絶対パスで指定する場合の例:
+# args = ["/path/to/autonomous-manufacturing-dx-agent/agents/mcp-server.mjs"]
