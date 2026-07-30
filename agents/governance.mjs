@@ -625,6 +625,66 @@ record({
   action: 'description がないと、どの役割へ渡すか判断できません'
 });
 
+/*
+ * ターミナルの可視化と対話インターフェース。
+ * ドット絵を二重に持っていないか、動作アニメーションがあるかを検査する。
+ */
+const spritesSrc = read('agents/sprites.mjs') || '';
+const dashSrc = read('agents/dashboard.mjs') || '';
+const consoleSrc = read('agents/console.mjs') || '';
+
+record({
+  id: 'C6-10', category: CAT6, severity: 'blocker',
+  name: '対話コンソールが存在する',
+  pass: !!consoleSrc && /createInterface/.test(consoleSrc),
+  detail: consoleSrc ? 'agents/console.mjs' : 'なし',
+  action: 'ターミナルから質問・指示できる入口が必要です'
+});
+
+record({
+  id: 'C6-11', category: CAT6, severity: 'blocker',
+  name: 'ドット絵を二重に持っていない',
+  pass: /from '\.\/sprites\.mjs'/.test(dashSrc) && /from '\.\/sprites\.mjs'/.test(consoleSrc),
+  detail: 'ダッシュボードとコンソールが sprites.mjs を参照',
+  action: '絵をコピーすると片方だけ古くなります。sprites.mjs から取り込んでください'
+});
+
+record({
+  id: 'C6-12', category: CAT6, severity: 'blocker',
+  name: '全エージェントに idle と work の2フレームがある',
+  pass: (() => {
+    const names = ['cto', 'director', 'common-manual', 'project-manual', 'design', 'telop', 'mcp'];
+    return names.every((n) => new RegExp(`${n.replace('-', '.')}[^\\n]*idle:`).test(spritesSrc)) &&
+           (spritesSrc.match(/work:/g) || []).length >= names.length;
+  })(),
+  detail: `work: の定義 ${(spritesSrc.match(/work:/g) || []).length}件`,
+  action: '作業中フレームがないと、どのエージェントが動いているか分かりません'
+});
+
+record({
+  id: 'C6-13', category: CAT6, severity: 'blocker',
+  name: 'コンソールがMCPのクライアントとして動く',
+  pass: /mcp-server\.mjs/.test(consoleSrc) && /tools\/call/.test(consoleSrc),
+  detail: 'Claude Code / Codex と同じツールを叩く',
+  action: 'コンソール独自のロジックを持たせないでください。答えが食い違います'
+});
+
+record({
+  id: 'C6-14', category: CAT6, severity: 'warn',
+  name: 'コンソールが「文章を生成しない」ことを明示している',
+  pass: /文章を生成しません/.test(consoleSrc),
+  detail: 'LLMを呼ばないことをユーザーへ伝えている',
+  action: '生成できると誤解させないでください'
+});
+
+record({
+  id: 'C6-15', category: CAT6, severity: 'warn',
+  name: 'アニメーションを自動再生していない',
+  pass: /実際にツールを呼んでいる間だけ/.test(spritesSrc),
+  detail: '意味のない点滅を出さない方針',
+  action: '常時アニメーションは目障りなだけで情報を持ちません'
+});
+
 /* Premiere API の未検証を隠していないか */
 const adapterSrc = read('uxp-plugin/adapter.js');
 record({

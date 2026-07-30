@@ -173,7 +173,8 @@ node video-manual-visualizer/validate-data.js   # データ検証
 node agents/test-mcp.mjs                        # MCP疎通テスト
 node agents/governance.mjs                      # CTOによる全体監査（GO / NO-GO）
 
-# 体制の確認
+# 体制の確認・操作
+node agents/console.mjs                         # 対話コンソール（質問・指示ができる）
 node agents/dashboard.mjs --audit               # ドット絵で構成と監査結果を表示
 ```
 

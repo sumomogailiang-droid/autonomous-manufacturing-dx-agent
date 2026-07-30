@@ -19,6 +19,15 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  PALETTE,
+  SPRITES,
+  frame,
+  renderSprite as renderSpriteRaw,
+  paint as paintRaw,
+  bold as boldRaw,
+  dim as dimRaw
+} from './sprites.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -31,231 +40,24 @@ const WANT_AUDIT = args.includes('--audit');
 const NO_COLOR = args.includes('--no-color') || process.env.NO_COLOR;
 
 /* ------------------------------------------------------------------ */
-/* パレット                                                            */
+/* ドット絵（agents/sprites.mjs が唯一の定義元）                          */
 /* ------------------------------------------------------------------ */
 
-const PALETTE = {
-  '.': null,          // 透明
-  'k': '#1b1f26',     // 輪郭
-  'w': '#f2f4f8',     // 白
-  'g': '#9aa4b2',     // 灰
-  'b': '#1d4ed8',     // 青（共通マニュアル）
-  'B': '#5b8cff',     // 青ハイライト
-  'o': '#8a5a00',     // 琥珀（案件別）
-  'O': '#e0a02a',     // 琥珀ハイライト
-  'p': '#5b3fb5',     // 紫（Codex 図解）
-  'P': '#a689f0',     // 紫ハイライト
-  'e': '#0f7b3e',     // 緑（テロップ）
-  'E': '#3fc47c',     // 緑ハイライト
-  'r': '#b3261e',     // 赤（警告）
-  'y': '#f0c46b',     // 黄
-  'c': '#8a6d1f',     // 金（CTO）
-  'C': '#e8c76a',     // 金ハイライト
-  'm': '#8f2f28',     // 朱（ディレクター）
-  'M': '#e06b60'      // 朱ハイライト
-};
+/* スプライトと描画はコンソールと共有する。ここでコピーを持たない。 */
+/* 静止フレームを使う。作業中アニメーションはコンソール側の担当。 */
+const SPR_CTO = frame('cto');
+const SPR_DIRECTOR = frame('director');
+const SPR_COMMON = frame('common-manual');
+const SPR_PROJECT = frame('project-manual');
+const SPR_DESIGN = frame('design');
+const SPR_TELOP = frame('telop');
+const SPR_MCP = frame('mcp');
 
-/* ------------------------------------------------------------------ */
-/* スプライト 16x16                                                     */
-/* ------------------------------------------------------------------ */
+const renderSprite = (rows) => renderSpriteRaw(rows, NO_COLOR);
+const paint = (hex, s) => paintRaw(hex, s, NO_COLOR);
+const bold = (s) => boldRaw(s, NO_COLOR);
+const dim = (s) => dimRaw(s, NO_COLOR);
 
-/* CTO超エージェント：王冠（金） */
-const SPR_CTO = [
-  '................',
-  '................',
-  '..k..........k..',
-  '.kck........kck.',
-  '.kck..k..k..kck.',
-  '.kck.kck.kck.kck',
-  'kcCckccCcckcCck.',
-  'kcCcccCCCcccCck.',
-  'kcCCCCCCCCCCCck.',
-  'kcCcccCCCcccCck.',
-  'kccccccccccccck.',
-  'kcCCCCCCCCCCCck.',
-  'kccccccccccccck.',
-  '.kkkkkkkkkkkkk..',
-  '................',
-  '................'
-];
-
-/* ディレクターエージェント：メガホン（朱） */
-const SPR_DIRECTOR = [
-  '................',
-  '..............k.',
-  '...........kkmk.',
-  '........kkmMMmk.',
-  '.....kkmMMMMMmk.',
-  '..kkmMMMMMMMMmk.',
-  '.kmMMMMMMMMMMmk.',
-  'kmMMMMMMMMMMMmk.',
-  'kmMMMMMMMMMMMmk.',
-  '.kmMMMMMMMMMMmk.',
-  '..kkmMMMMMMMMmk.',
-  '.....kkmMMMMmk..',
-  '........kkmmk...',
-  '..........kk....',
-  '................',
-  '................'
-];
-
-/* 共通マニュアルエージェント：バインダー（青） */
-const SPR_COMMON = [
-  '................',
-  '...kkkkkkkkkk...',
-  '..kbbbbbbbbbbk..',
-  '..kbBBBBBBBBbk..',
-  '..kbwwwwwwwwbk..',
-  '..kbwkkkkkkwbk..',
-  '..kbwwwwwwwwbk..',
-  '..kbwkkkkkkwbk..',
-  '..kbwwwwwwwwbk..',
-  '..kbwkkkkkkwbk..',
-  '..kbwwwwwwwwbk..',
-  '..kbwkkkkkkwbk..',
-  '..kbwwwwwwwwbk..',
-  '..kbBBBBBBBBbk..',
-  '...kkkkkkkkkk...',
-  '................'
-];
-
-/* 案件別エージェント：フォルダ（琥珀） */
-const SPR_PROJECT = [
-  '................',
-  '................',
-  '..kkkkk.........',
-  '.koooook........',
-  'kooooooookkkkkk.',
-  'koOOOOOOOOOOOOk.',
-  'koooooooooooook.',
-  'koOOOOOOOOOOOOk.',
-  'koooooooooooook.',
-  'koOOOOOOOOOOOOk.',
-  'koooooooooooook.',
-  'koOOOOOOOOOOOOk.',
-  'koooooooooooook.',
-  '.kkkkkkkkkkkkk..',
-  '................',
-  '................'
-];
-
-/* Codex 図解・画像エージェント：パレット（紫） */
-const SPR_DESIGN = [
-  '................',
-  '.....kkkkkk.....',
-  '...kkppppppkk...',
-  '..kpppPPPPpppk..',
-  '.kppwwppppwwppk.',
-  '.kppwwppppwwppk.',
-  'kpppppppppppppk.',
-  'kppppwwppppppppk',
-  'kppppwwpppppppk.',
-  'kpppppppppppppk.',
-  '.kppwwpppppppk..',
-  '.kppwwppppppk...',
-  '..kppppppppk....',
-  '...kkppppkk.....',
-  '.....kkkk.......',
-  '................'
-];
-
-/* テロップエージェント：字幕（緑） */
-const SPR_TELOP = [
-  '................',
-  '.kkkkkkkkkkkkkk.',
-  '.keeeeeeeeeeeek.',
-  '.keEEEEEEEEEEek.',
-  '.keeeeeeeeeeeek.',
-  '.keeeeeeeeeeeek.',
-  '.keeeeeeeeeeeek.',
-  '.keeeeeeeeeeeek.',
-  '.keewwwwwwwweek.',
-  '.keeeeeeeeeeeek.',
-  '.keewwwwwweeeek.',
-  '.keeeeeeeeeeeek.',
-  '.keEEEEEEEEEEek.',
-  '.kkkkkkkkkkkkkk.',
-  '................',
-  '................'
-];
-
-/* MCPサーバー：ハブ（灰＋緑） */
-const SPR_MCP = [
-  '................',
-  '....kkkkkkkk....',
-  '..kkggggggggkk..',
-  '..kggggggggggk..',
-  '.kggwwggggwwggk.',
-  '.kggwwggggwwggk.',
-  '.kggggggggggggk.',
-  '.kggEEEEEEEEggk.',
-  '.kggEwwwwwwEggk.',
-  '.kggEEEEEEEEggk.',
-  '.kgggggggggggggk',
-  '..kggggggggggk..',
-  '..kkggggggggkk..',
-  '....kkkkkkkk....',
-  '................',
-  '................'
-];
-
-/* スプライトが16x16であることを検証する（崩れた絵をそのまま出さない） */
-for (const [name, spr] of Object.entries({
-  SPR_CTO, SPR_DIRECTOR, SPR_COMMON, SPR_PROJECT, SPR_DESIGN, SPR_TELOP, SPR_MCP
-})) {
-  if (spr.length !== 16 || spr.some((row) => row.length !== 16)) {
-    const bad = spr.map((r, i) => (r.length !== 16 ? `${i}行目:${r.length}文字` : null)).filter(Boolean);
-    throw new Error(`スプライト ${name} が16x16ではありません（${spr.length}行 / ${bad.join(', ')}）`);
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* ターミナル描画                                                       */
-/* ------------------------------------------------------------------ */
-
-function hexToRgb(hex) {
-  return [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16)
-  ];
-}
-
-const RESET = '\x1b[0m';
-
-function fg(hex) { const [r, g, b] = hexToRgb(hex); return `\x1b[38;2;${r};${g};${b}m`; }
-function bg(hex) { const [r, g, b] = hexToRgb(hex); return `\x1b[48;2;${r};${g};${b}m`; }
-
-/*
- * 上下2行を1行の「▀」で描く。
- * 上ピクセル = 前景色、下ピクセル = 背景色。
- */
-function renderSprite(rows) {
-  if (NO_COLOR) {
-    /* 色なし環境では濃淡を文字で表現する */
-    return rows.map((r) => [...r].map((c) => (c === '.' ? ' ' : c === 'k' ? '#' : '█')).join(''));
-  }
-  const out = [];
-  for (let y = 0; y < rows.length; y += 2) {
-    const top = rows[y] || '';
-    const bot = rows[y + 1] || '';
-    let line = '';
-    for (let x = 0; x < 16; x++) {
-      const tc = PALETTE[top[x]] ?? null;
-      const bc = PALETTE[bot[x]] ?? null;
-      if (!tc && !bc) { line += ' '; continue; }
-      if (tc && bc) { line += fg(tc) + bg(bc) + '▀' + RESET; continue; }
-      if (tc) { line += fg(tc) + '▀' + RESET; continue; }
-      line += fg(bc) + '▄' + RESET;
-    }
-    out.push(line);
-  }
-  return out;
-}
-
-function paint(hex, s) { return NO_COLOR ? s : fg(hex) + s + RESET; }
-function bold(s) { return NO_COLOR ? s : '\x1b[1m' + s + RESET; }
-function dim(s) { return NO_COLOR ? s : '\x1b[2m' + s + RESET; }
 
 /* ------------------------------------------------------------------ */
 /* 状態の収集                                                          */

@@ -60,6 +60,55 @@ node agents/test-mcp.mjs
 | `design` | 図解・画像の生成 | **Codex** |
 | `telop` | 文字起こし→テロップ | **Codex** |
 
+## ターミナルから使う
+
+### 対話コンソール
+
+```bash
+node agents/console.mjs
+```
+
+質問や指示をターミナルから出せます。MCPサーバーのクライアントとして動くため、
+Claude Code や Codex とまったく同じツールを叩きます。答えが食い違いません。
+
+```
+/team              チームをドット絵で表示
+/role <名前>       役割の定義
+/audit             全体監査（GO / NO-GO）
+/rule <検索語>     マニュアル全文検索
+/telop             テロップ整形（複数行入力）
+/check             表記チェック（複数行入力）
+/handoff           引き継ぎメモを作る
+/help              コマンド一覧
+```
+
+スラッシュなしで入力すると、マニュアル全文検索になります。
+
+**このコンソールは文章を生成しません。** LLMを呼ばず、根拠を引く道具として作っています。
+判断が必要なことは担当役割を案内するので、Claude Code か Codex でその役割を呼んでください。
+
+### ドット絵
+
+エージェントは「オフィスで机に向かって作業している人」として描いています。
+道具で役割が分かります。
+
+| 役割 | 見た目 |
+|---|---|
+| cto | 王冠をかぶって全体を見ている |
+| director | 赤いヘッドセットで指示を出している |
+| common-manual | 青い分厚いバインダーを開いている |
+| project-manual | 琥珀色の案件フォルダを広げている |
+| design | 紫のペンタブで絵を描いている |
+| telop | 緑のキーボードで字幕を打っている |
+| mcp | サーバーラック（人ではなく設備） |
+
+各エージェントに **idle（静止）** と **work（作業中）** の2フレームがあり、
+ツールを呼んでいる間だけ切り替わります。どのエージェントが動いているか一目で分かります。
+
+自動再生はしません。意味のない点滅は情報を持たないためです。
+
+絵の定義は `agents/sprites.mjs` の1箇所だけにあります（ダッシュボードとコンソールで共有）。
+
 ### 役割定義の共有
 
 役割定義は `.claude/agents/*.md` の1箇所だけにあります。
@@ -152,6 +201,7 @@ node agents/generate-project-agent.mjs <案件マニュアルのパス> <案件I
 ```bash
 node video-manual-visualizer/validate-data.js   # データ検証 181項目
 node agents/test-mcp.mjs                        # MCP疎通テスト 79項目
+node agents/test-console.mjs                    # コンソール検証 59項目
 node agents/governance.mjs                      # CTOによる全体監査 48項目（GO / NO-GO）
 
 # 詳細表示
