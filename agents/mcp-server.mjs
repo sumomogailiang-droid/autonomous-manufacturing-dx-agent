@@ -54,7 +54,8 @@ function loadCommonManual() {
 function listProjectIds() {
   if (!existsSync(PROJECTS_DIR)) return [];
   return readdirSync(PROJECTS_DIR)
-    .filter((f) => f.endsWith('.md'))
+    /* README.md は説明ファイルであって案件ではない */
+    .filter((f) => f.endsWith('.md') && f !== 'README.md')
     .map((f) => basename(f, '.md'))
     .sort();
 }
