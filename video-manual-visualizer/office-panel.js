@@ -274,6 +274,17 @@
           '<p class="office-legend">会話・移動は体制ルールとマニュアルに基づく<strong>再現</strong>です。' +
             '下の<strong>作業ボタン</strong>の実行だけが実データ照会です。</p>' +
 
+          /* --- 制作プラン（現状確認 → 残り工程） --- */
+          '<div class="office-planner">' +
+            '<div class="office-planner-head"><strong>制作プラン</strong>' +
+              '<span>今どこまで終わったかを選ぶと、残りの工程と効率の型を実データから組み立てます</span></div>' +
+            '<div class="office-planner-controls">' +
+              '<label for="plan-done">完了した工程</label>' +
+              '<select id="plan-done"></select>' +
+              '<button type="button" class="office-plan-btn" id="plan-run">プランを立てる</button>' +
+            '</div>' +
+          '</div>' +
+
           '<div class="office-jobs" id="office-jobs" role="group" aria-label="実行できる作業"></div>' +
           '<div class="office-result" id="office-result" aria-live="polite"></div>' +
         '</div>' +
@@ -679,6 +690,98 @@
       if (ambientTimer) clearTimeout(ambientTimer);
       ambientTimer = window.setTimeout(ambientTick, delay);
     }
+
+    /* ================================================================ */
+    /* 制作プラン（現状確認 → 残り工程）                                   */
+    /*                                                                    */
+    /* MANUAL_DATA.processes（13工程）から残りを組み立てる実データ照会。   */
+    /* 効率の型は共通マニュアルの一括処理手順から。出典を各行に付ける。    */
+    /* ================================================================ */
+
+    var planSelect = host.querySelector('#plan-done');
+    var planBtn = host.querySelector('#plan-run');
+
+    (D.processes || []).forEach(function (pr) {
+      var opt = document.createElement('option');
+      opt.value = String(pr.no);
+      opt.textContent = '工程' + pr.no + '：' + pr.title + ' まで完了';
+      planSelect.appendChild(opt);
+    });
+    /* 既定は工程7（テロップまで完了）。冒頭3分の完成がだいたいここに当たる。 */
+    planSelect.value = '9';
+
+    /* 一括処理の型。すべて共通マニュアルの正式記載から。 */
+    var BATCH_TIPS = [
+      { text: 'テロップ位置は1つ調整→モーションをコピー→全選択ペーストで一括', src: 'テロップ位置調整（XML文字起こし後）' },
+      { text: '画角変更はラベル色で分類→ラベルグループ選択→モーションを一括適用', src: '定点動画の画角変更' },
+      { text: '同じ演出はサブシーケンスにまとめて一括挿入', src: '用語集（サブシーケンス）' },
+      { text: 'BGMは最後に入れる。カット・テロップ・演出の確定前に入れると手戻りになる', src: '工程9・工程15' },
+      { text: '冒頭3分の完成見本が全体の基準。残り尺は冒頭の設定・色・頻度をそのまま流用する', src: '数値基準（冒頭の完成見本 3分）' }
+    ];
+
+    function runPlan() {
+      if (busy) return;
+      busy = true;
+      var doneNo = parseInt(planSelect.value, 10);
+      var procs = D.processes || [];
+      var remaining = procs.filter(function (pr) { return pr.no > doneNo; });
+      var current = procs.filter(function (pr) { return pr.no === doneNo; })[0];
+      var next = remaining[0];
+
+      ['cto', 'director', 'mcp'].forEach(function (id) { setState(id, 'working'); });
+      say('director', '現状を確認して残り工程を組み立てます');
+      addLog('real', 'ディレクター', '制作プラン作成（工程' + doneNo + 'まで完了として）', byId.director.accent);
+
+      window.setTimeout(function () {
+        ['cto', 'director', 'mcp'].forEach(function (id) { setState(id, 'idle'); });
+        say('director', '');
+        addLog('real', 'ディレクター', '残り' + remaining.length + '工程のプランを提示', byId.director.accent);
+
+        var h = [];
+        h.push('<div class="office-result-head">' +
+          '<span class="office-chip" style="background:' + esc(byId.director.accent) + '"></span>' +
+          '<strong>制作プラン</strong>' +
+          '<span class="office-result-title">工程' + doneNo + '（' + esc(current ? current.title : '') +
+          '）まで完了 → 残り' + remaining.length + '工程</span></div>');
+
+        if (next) {
+          h.push('<p class="office-plan-next">次の一手：<strong>工程' + next.no + ' ' +
+            esc(next.title) + '</strong> — ' + esc(next.summary) + '</p>');
+        } else {
+          h.push('<p class="office-plan-next">全13工程が完了しています。保存期間（プロマネ・素材1年間）の管理へ。</p>');
+        }
+
+        if (remaining.length) {
+          h.push('<ol class="office-plan-list">');
+          remaining.forEach(function (pr) {
+            h.push('<li' + (pr.ruleType === 'conflict' ? ' class="is-conflict"' : '') + '>' +
+              '<span class="office-plan-no">工程' + pr.no + '</span>' +
+              '<strong>' + esc(pr.title) + '</strong>' +
+              '<span>' + esc(pr.summary) + '</span>' +
+              (pr.ruleType === 'conflict' ? '<em>⚠ 未決定の矛盾あり。勝手に統一しない</em>' : '') +
+              '</li>');
+          });
+          h.push('</ol>');
+        }
+
+        h.push('<p class="office-plan-h">効率の型（共通マニュアルの一括処理）</p>');
+        h.push('<ul class="office-result-rows">');
+        BATCH_TIPS.forEach(function (t) {
+          h.push('<li>' + esc(t.text) + '<span class="office-plan-src">出典：' + esc(t.src) + '</span></li>');
+        });
+        h.push('</ul>');
+
+        var conflicts = (D.audit && D.audit.conflicts ? D.audit.conflicts : []).length;
+        h.push('<p class="office-result-note">確認してから進むもの：未決定の矛盾 ' + conflicts +
+          '件（演出頻度・提出方法など。確定はディレクター権限）／進捗報告は毎日21時まで' +
+          '（プロマネURL付き）／案件独自の提出物は project-manual（get_project_rules）で照合。</p>');
+
+        result.innerHTML = h.join('');
+        busy = false;
+      }, 800);
+    }
+
+    planBtn.addEventListener('click', runPlan);
 
     /* --- 起動 -------------------------------------------------------- */
     addLog('real', 'MCPサーバー', '接続を待機しています', byId.mcp ? byId.mcp.accent : '#888');

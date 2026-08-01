@@ -1115,3 +1115,63 @@ td .note { display: block; color: var(--text-muted); font-size: 12px; margin-top
 }
 .iso-board-title { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; fill: #e8e3d6; }
 .iso-board-line { font-size: 7px; fill: #9aa2ad; }
+
+/* --- 制作プラン ------------------------------------------------------ */
+
+.office-planner {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.office-planner-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.office-planner-head span { font-size: .74rem; color: var(--text-muted); }
+.office-planner-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.office-planner-controls label { font-size: .78rem; color: var(--text-muted); }
+.office-planner-controls select {
+  font: inherit; font-size: .82rem;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  max-width: 100%;
+}
+.office-plan-btn {
+  font: inherit; font-size: .82rem; font-weight: 700;
+  padding: 6px 16px;
+  border: 0; border-radius: 7px;
+  background: var(--accent); color: var(--accent-text);
+  cursor: pointer;
+}
+.office-plan-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.office-plan-next { margin: 0 0 10px; font-size: .86rem; }
+.office-plan-h { margin: 12px 0 4px; font-size: .74rem; letter-spacing: .06em; color: var(--text-muted); }
+.office-plan-src { display: block; font-size: .68rem; color: var(--text-muted); }
+
+.office-plan-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.office-plan-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "no title" "no summary" "no warn";
+  column-gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+}
+.office-plan-list .office-plan-no {
+  grid-area: no; align-self: center;
+  font-size: .72rem; font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.office-plan-list strong { grid-area: title; font-size: .84rem; }
+.office-plan-list li > span { grid-area: summary; font-size: .74rem; color: var(--text-muted); }
+.office-plan-list li.is-conflict { border-color: var(--conflict); }
+.office-plan-list em { grid-area: warn; font-style: normal; font-size: .72rem; color: var(--conflict); }
