@@ -285,6 +285,21 @@ runSuite('C4-01', 'データ検証（validate-data.js）',
 runSuite('C4-02', 'MCP疎通テスト（test-mcp.mjs）',
   'agents/test-mcp.mjs', /失敗:\s*(\d+)\s*件/);
 
+/*
+ * コンソールとタイムコードの検証も監査に含める。
+ *
+ * これらは長らく監査の外にあった。監査が実行しないテストは、
+ * 壊れても出荷判定に出ない。実際 test-console.mjs はスプライト体数を
+ * 固定値で検査しており、ドット絵を足すと落ちるが誰も気づけなかった。
+ *
+ * タイムコードはフレームずれ防止の中核で、5箇所以上のずれは
+ * 品質評価レベルで-5点。ここが壊れたまま出荷されるのが一番まずい。
+ */
+runSuite('C4-04', 'コンソール検証（test-console.mjs）',
+  'agents/test-console.mjs', /失敗:\s*(\d+)\s*件/);
+runSuite('C4-05', 'タイムコード検証（test-timecode.mjs）',
+  'tools/test-timecode.mjs', /失敗:\s*(\d+)\s*件/);
+
 /* JS構文チェック */
 const jsFiles = [
   'video-manual-visualizer/manual-data.js',
@@ -296,7 +311,17 @@ const jsFiles = [
   'agents/dashboard.mjs',
   'agents/test-mcp.mjs',
   'tools/build-plugin-data.mjs',
-  'uxp-plugin/telop.js'
+  'tools/build-office-data.mjs',
+  'tools/build-webapp.mjs',
+  'tools/build-speaker-worksheet.mjs',
+  'tools/segment-kit.mjs',
+  'agents/sprites.mjs',
+  'agents/console.mjs',
+  'uxp-plugin/telop.js',
+  'uxp-plugin/timecode.js',
+  'video-manual-visualizer/office.js',
+  'video-manual-visualizer/office-panel.js',
+  'video-manual-visualizer/office-ambient.js'
 ];
 const badSyntax = jsFiles.filter((f) => {
   if (!existsSync(resolve(ROOT, f))) return true;

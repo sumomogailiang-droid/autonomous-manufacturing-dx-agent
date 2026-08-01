@@ -152,8 +152,22 @@ const unknown = await run('/nosuchcommand');
 check('知らないコマンドで案内する', unknown.out.includes('知らないコマンドです'));
 
 const audit = await run('/audit', 60000);
-check('/audit が監査を実行する', /監査結果:\s*(GO|NO-GO)/.test(audit.out),
-  (audit.out.match(/監査結果:\s*\S+/) || [])[0] || 'なし');
+/*
+ * 監査（governance.mjs）の中からこのテストが呼ばれている場合、
+ * MCP側の再帰ガードが働いて監査は実行されない。
+ * governance -> test-console -> /audit -> governance の無限ループを防ぐためで、
+ * そのときはガードのメッセージが返るのが正しい挙動。
+ *
+ * ガードを「失敗」と扱うと、このテストを監査へ組み込んだ瞬間に必ず落ちる。
+ * 実行経路によって期待する応答が変わるので、両方を検査する。
+ */
+if (Number(process.env.VM_GOVERNANCE_DEPTH || 0) > 0) {
+  check('/audit が監査中は再帰を防ぐ', /再帰を防ぐため実行していません/.test(audit.out),
+    audit.out.replace(/\s+/g, ' ').slice(0, 70));
+} else {
+  check('/audit が監査を実行する', /監査結果:\s*(GO|NO-GO)/.test(audit.out),
+    (audit.out.match(/監査結果:\s*\S+/) || [])[0] || 'なし');
+}
 
 const projects = await run('/projects');
 check('/projects が応答する', projects.out.includes('案件') || projects.out.includes('登録'));
