@@ -196,7 +196,7 @@
   var DELIVERABLES = [
     { file: 'agents/knowledge/common-manual.md', desc: '共通マニュアル知識ベース（自動生成）' },
     { file: 'uxp-plugin/data/manual-snapshot.js', desc: 'Premiereプラグイン用スナップショット' },
-    { file: 'video-manual-visualizer/office-data.js', desc: '役割定義の写し（11席）' },
+    { file: 'video-manual-visualizer/office-data.js', desc: '役割定義の写し' },
     { file: 'agents/roadmap-frame-zero.md', desc: 'FRAME ZERO 完全自動化ロードマップ' },
     { file: 'dist/index.html', desc: '配布用1ファイルWebアプリ' }
   ];
@@ -326,8 +326,10 @@
     [
       { key: 'audit', text: '監査室', cls: '' },
       { key: 'claude', text: '制作部門｜Claude Code チーム', cls: 'is-gold' },
-      { key: 'codex', text: '制作部門｜Codex チーム', cls: 'is-ocean' }
+      { key: 'codex', text: '制作部門｜Codex チーム', cls: 'is-ocean' },
+      { key: 'sales', text: '営業部', cls: 'is-teal' }
     ].forEach(function (z) {
+      if (!scene.zoneLabels[z.key]) return;
       var pos = toPct(scene.zoneLabels[z.key]);
       var el = document.createElement('span');
       el.className = 'office-zonelabel ' + z.cls;

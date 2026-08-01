@@ -81,6 +81,9 @@
     signText: '#f2ede2',
     zoneClaude: '#1d4ed8',
     zoneCodex: '#5b3fb5',
+    zoneSales: '#0f766e',
+    floorSales: '#e4e6df',
+    floorSalesB: '#dbdfd4',
     shadow: 'rgba(30, 24, 12, 0.13)'
   };
 
@@ -294,6 +297,18 @@
   /* 設備・装飾                                                         */
   /* ---------------------------------------------------------------- */
 
+  /**
+   * 空席。まだ人がいない窓口。
+   * 起動していない席を人つきで描くと動いているように見えるので、机だけを置く。
+   */
+  function vacantDesk(bx, by) {
+    var a = { accent: SCENE.metal, accentLight: SCENE.metal };
+    return '<g class="iso-vacant" aria-hidden="true">' +
+      box(bx + 0.44, by - 0.06, 0, 1.10, 0.13, 1.16, SCENE.chairDark) +
+      box(bx + 0.44, by - 0.06, 0.44, 1.10, 0.78, 0.10, SCENE.chair) +
+      deskUnit(bx, by, a) + '</g>';
+  }
+
   /** MCPサーバーはラック。人ではないので椅子も机も置かない。 */
   function rack(bx, by, a) {
     var g = [];
@@ -440,8 +455,34 @@
     parts.push('<line x1="' + b1.x.toFixed(1) + '" y1="' + b1.y.toFixed(1) +
       '" x2="' + b2.x.toFixed(1) + '" y2="' + b2.y.toFixed(1) + '" class="iso-divider"/>');
 
+    /* --- 営業部フロアの構造（壁・床・サイン） ------------------------
+       席より先に描く。あとから描くと営業部の席を壁が上塗りしてしまう。 */
+    var sf = data.salesFloor;
+    if (sf) {
+      /* 制作フロアと営業フロアを仕切る壁 */
+      parts.push(box(W + 0.15, 0, 0, 0.42, D, 2.9, SCENE.wallDark));
+      /* 営業フロアの奥壁 */
+      parts.push(box(sf.x, -0.30, 0, sf.w, 0.30, 2.9, SCENE.wall));
+
+      parts.push('<g class="iso-floor">');
+      for (y = 0; y < sf.d; y++) {
+        for (x = 0; x < sf.w; x++) {
+          parts.push(tile(sf.x + x, y, Math.min(1, sf.w - x), Math.min(1, sf.d - y),
+            (x + y) % 2 === 0 ? SCENE.floorSales : SCENE.floorSalesB));
+        }
+      }
+      parts.push('</g>');
+      parts.push(tile(sf.x + 0.15, 0.4, sf.w - 0.4, sf.d - 0.8, SCENE.zoneSales, 'opacity="0.07"'));
+
+      var so = project(sf.x + 0.5, 0, 2.3);
+      parts.push('<g transform="matrix(1,0.5,0,1,' + so.x.toFixed(1) + ',' + so.y.toFixed(1) + ')">' +
+        '<text class="iso-sign-floor" x="0" y="0">SALES</text>' +
+        '<text class="iso-sign-sub" x="1" y="13">CLIENT INTAKE</text></g>');
+    }
+
     /* --- 天井の照明 ------------------------------------------------ */
     for (i = 0; i < 4; i++) parts.push(lamp(1.4 + i * 3.1, 4.4));
+    if (sf) parts.push(lamp(sf.x + 1.6, 4.4));
 
     /* --- 席（奥から手前へ） ---------------------------------------- */
     var seated = data.agents.slice().sort(function (a, b) {
@@ -490,6 +531,15 @@
       );
     }
 
+    /* --- 営業部フロアの家具（席と同じ深さ帯なので席の後） ------------ */
+    if (sf) {
+      parts.push(plant(sf.x + sf.w - 0.7, 0.2));
+      /* 未起動の窓口は人を描かず机だけ置く。人つきだと動いて見える。 */
+      (data.vacant || []).forEach(function (v) {
+        parts.push(vacantDesk(v.seat[0], v.seat[1]));
+      });
+    }
+
     /* --- ミーティングテーブル（Codexブロックの手前） ---------------- */
     var meetGrid = [10.9, 7.3];
     parts.push(meetingTable(meetGrid[0], meetGrid[1]));
@@ -503,7 +553,8 @@
     parts.push('<g class="iso-walkers" id="iso-walkers"></g>');
 
     /* --- 表示範囲 -------------------------------------------------- */
-    var corners = [project(0, 0, 0), project(W, 0, 0), project(0, D, 0), project(W, D, 0)];
+    var farX = data.salesFloor ? data.salesFloor.x + data.salesFloor.w : W;
+    var corners = [project(0, 0, 0), project(farX, 0, 0), project(0, D, 0), project(farX, D, 0)];
     var xs = corners.map(function (c) { return c.x; });
     var ys = corners.map(function (c) { return c.y; });
     var minX = Math.min.apply(null, xs) - 30;
@@ -520,7 +571,10 @@
       zoneLabels: {
         claude: project(2.2, 3.35, 0),
         codex: project(9.0, 3.35, 0),
-        audit: project(1.9, 0.4, 0)
+        audit: project(1.9, 0.4, 0),
+        sales: data.salesFloor
+          ? project(data.salesFloor.x + 1.4, 0.5, 0)
+          : null
       },
       svg: '<svg class="iso-svg" viewBox="' + vb.x.toFixed(1) + ' ' + vb.y.toFixed(1) + ' ' +
         vb.w.toFixed(1) + ' ' + vb.h.toFixed(1) +

@@ -51,7 +51,7 @@ function run(input, timeoutMs = 30000) {
 
 const ROLES = ['cto', 'director', 'common-manual', 'project-manual', 'design', 'telop', 'mcp'];
 
-check('スプライトが11体ある', Object.keys(SPRITES).length === 11, Object.keys(SPRITES).join(', '));
+check('スプライトが13体ある', Object.keys(SPRITES).length === 13, Object.keys(SPRITES).join(', '));
 
 for (const r of ROLES) {
   check(`${r} に idle と work がある`,

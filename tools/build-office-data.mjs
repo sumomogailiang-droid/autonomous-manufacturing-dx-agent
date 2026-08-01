@@ -72,15 +72,28 @@ const SEATS = {
   /* 制作部門 Codex チーム（右ブロック） */
   design:           { seat: [7.2, 3.4],  team: 'codex', furniture: 'desk', accent: 'p', hair: 'h' },
   telop:            { seat: [10.1, 3.4], team: 'codex', furniture: 'desk', accent: 'e', hair: 'h' },
-  mixer:            { seat: [7.2, 6.6],  team: 'codex', furniture: 'desk', accent: 'z', hair: 'h' }
+  mixer:            { seat: [7.2, 6.6],  team: 'codex', furniture: 'desk', accent: 'z', hair: 'h' },
+
+  /* 営業部フロア（制作部門の隣。壁で仕切られた別フロア） */
+  'sales-hilura':   { seat: [14.4, 1.6], team: 'sales', furniture: 'desk', accent: 'n', hair: 'h' },
+  'sales-chat':     { seat: [14.4, 5.2], team: 'sales', furniture: 'desk', accent: 'v', hair: 'h' }
 };
+
+/*
+ * 営業部フロアの空席。まだ人がいない窓口を「空の机」として描く。
+ * 起動していない窓口を人つきで描くと、動いているように見えてしまう。
+ */
+const VACANT = [
+  { seat: [14.4, 8.4], label: '他制作会社 窓口', note: '未起動' }
+];
 
 /* 部門の表示名。在席一覧の見出しに使う。 */
 const TEAMS = {
   audit:  { label: '監査室', order: 1 },
   claude: { label: '制作部門｜Claude Code チーム', order: 2 },
   codex:  { label: '制作部門｜Codex チーム', order: 3 },
-  infra:  { label: '設備', order: 4 }
+  sales:  { label: '営業部', order: 4 },
+  infra:  { label: '設備', order: 5 }
 };
 
 /* 実行環境。AGENTS.md の分担表と一致させる。 */
@@ -95,7 +108,9 @@ const RUNTIME = {
   observer: 'Claude Code',
   recruiter: 'Claude Code',
   cutter: 'Claude Code',
-  mixer: 'Codex'
+  mixer: 'Codex',
+  'sales-hilura': 'Claude Code',
+  'sales-chat': 'Claude Code'
 };
 
 /* MCPサーバーは .claude/agents に定義ファイルを持たない（人ではなく設備）。
@@ -202,6 +217,7 @@ function build() {
       roadmap: 'agents/roadmap-frame-zero.md'
     },
     teams: TEAMS,
+    vacant: VACANT,
     palette: {
       skin: PALETTE.s,
       hair: PALETTE.h,
@@ -211,7 +227,9 @@ function build() {
       furnitureDark: PALETTE.G,
       warn: PALETTE.r
     },
+    /* 制作フロアと営業フロアを分けて持つ。壁で仕切られた別フロアとして描く。 */
     floor: { w: 13, d: 9.4 },
+    salesFloor: { x: 13.6, w: 4.6, d: 9.4 },
     agents
   };
 }

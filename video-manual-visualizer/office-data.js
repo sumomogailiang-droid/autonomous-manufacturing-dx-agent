@@ -36,11 +36,25 @@
         "label": "制作部門｜Codex チーム",
         "order": 3
       },
+      "sales": {
+        "label": "営業部",
+        "order": 4
+      },
       "infra": {
         "label": "設備",
-        "order": 4
+        "order": 5
       }
     },
+    "vacant": [
+      {
+        "seat": [
+          14.4,
+          8.4
+        ],
+        "label": "他制作会社 窓口",
+        "note": "未起動"
+      }
+    ],
     "palette": {
       "skin": "#e8b48c",
       "hair": "#3a3f4a",
@@ -52,6 +66,11 @@
     },
     "floor": {
       "w": 13,
+      "d": 9.4
+    },
+    "salesFloor": {
+      "x": 13.6,
+      "w": 4.6,
       "d": 9.4
     },
     "agents": [
@@ -382,6 +401,75 @@
         "furniture": "desk",
         "accent": "#7c4a21",
         "accentLight": "#c98a4b",
+        "hair": "#3a3f4a",
+        "runtime": "Claude Code"
+      },
+      {
+        "id": "sales-chat",
+        "label": "チャット窓口",
+        "title": "チャット窓口（営業部）",
+        "description": "チャット窓口。Claude Codeのチャットで受けた指示を正確に読み取り、「確定していること」「確認が必要なこと」「解釈が割れる点」に切り分けて、制作部門が着手できる形の指示票にする。指示が曖昧なとき、複数の解釈がありうるとき、どの担当へ渡すか決めたいときに使う。制作の良し悪しは判断しない。",
+        "tools": [
+          "Read",
+          "Grep",
+          "Glob"
+        ],
+        "model": "opus",
+        "sections": [
+          "なぜこの役割が要るか",
+          "何をするか",
+          "1. 原文を保持する",
+          "2. 3つに切り分ける",
+          "3. 渡し先を決める",
+          "4. 差し戻しの判断",
+          "やってはいけないこと",
+          "完了条件",
+          "連携"
+        ],
+        "isEquipment": false,
+        "sourceFile": ".claude/agents/sales-chat.md",
+        "seat": [
+          14.4,
+          5.2
+        ],
+        "team": "sales",
+        "furniture": "desk",
+        "accent": "#c2410c",
+        "accentLight": "#fb923c",
+        "hair": "#3a3f4a",
+        "runtime": "Claude Code"
+      },
+      {
+        "id": "sales-hilura",
+        "label": "ヒルウラ窓口",
+        "title": "ヒルウラ窓口（営業部）",
+        "description": "ヒルウラ窓口。株式会社ヒルウラからの案件依頼と連絡を受け取り、「案件依頼」か「制作関連」かを分類する。案件依頼ならカレンダーと突き合わせて納期に間に合うかを分析し、スケジュール案を経営者へ提示する。制作関連なら制作部門へ渡してCTO・制作陣の判断を仰ぐ。メールやDiscordの依頼を仕分けるとき、納期の可否を判断したいときに使う。判断はするが、返信の送信と受注の確定はしない。",
+        "tools": [
+          "Read",
+          "Grep",
+          "Glob"
+        ],
+        "model": "opus",
+        "sections": [
+          "担当する入口",
+          "何をするか",
+          "1. 分類する",
+          "2. 案件依頼 — 納期に間に合うかを分析する",
+          "3. 制作関連 — 制作部門へ渡す",
+          "やってはいけないこと",
+          "完了条件",
+          "連携"
+        ],
+        "isEquipment": false,
+        "sourceFile": ".claude/agents/sales-hilura.md",
+        "seat": [
+          14.4,
+          1.6
+        ],
+        "team": "sales",
+        "furniture": "desk",
+        "accent": "#0f766e",
+        "accentLight": "#2dd4bf",
         "hair": "#3a3f4a",
         "runtime": "Claude Code"
       },

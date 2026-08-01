@@ -23,6 +23,8 @@
  *   recruiter      … 履歴書の束をめくっている
  *   cutter         … フィルムをレザーで切っている
  *   mixer          … フェーダー卓を操作している
+ *   sales-hilura   … 受話器と依頼票をさばいている（ヒルウラ窓口）
+ *   sales-chat     … 吹き出しの並ぶ画面に向かっている（チャット窓口）
  *
  * === アニメーション ===
  *
@@ -66,7 +68,11 @@ export const PALETTE = {
   'u': '#46586e',     // 鉄紺（リアルタイム監査）
   'U': '#8ba0bd',     // 鉄紺ハイライト
   'j': '#7c4a21',     // 褐色（人材派遣）
-  'J': '#c98a4b'      // 褐色ハイライト
+  'J': '#c98a4b',     // 褐色ハイライト
+  'n': '#0f766e',     // 常盤（ヒルウラ窓口）
+  'N': '#2dd4bf',     // 常盤ハイライト
+  'v': '#c2410c',     // 橙（チャット窓口）
+  'V': '#fb923c'      // 橙ハイライト
 };
 
 /* ------------------------------------------------------------------ */
@@ -532,6 +538,91 @@ const MIXER_WORK = [
   '...k........k...'
 ];
 
+
+/* ------------------------------------------------------------------ */
+/* ヒルウラ窓口 — 受話器を取り、依頼票を仕分けている                      */
+/* ------------------------------------------------------------------ */
+
+const HILURA_IDLE = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '...nkhssshkn....',
+  '...nksksksk.....',
+  '....kssssskk....',
+  '...knnnnnnnnk...',
+  '..knNNNNNNNNnk..',
+  '..knnnnnnnnnnk..',
+  '..kkwwwkwwwkk...',
+  '..knwwwkwwwnk...',
+  '..knNNNkNNNnk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+const HILURA_WORK = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '...NkhhhhhkN....',
+  '..NnkhssshknN...',
+  '...nkskksskk....',
+  '....kssssskk....',
+  '...knnnnnnnnk...',
+  '..knNNNNNNNNnk..',
+  '.kknnnnnnnnnnkk.',
+  '.kkwwwwkwwwwkk..',
+  '.knwwwwkwwwwnk..',
+  '..knNNNkNNNnk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+/* ------------------------------------------------------------------ */
+/* チャット窓口 — 吹き出しの並ぶ画面に向かっている                        */
+/* ------------------------------------------------------------------ */
+
+const CHAT_IDLE = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....ksksksk.....',
+  '....kssssskk....',
+  '...kvvvvvvvvk...',
+  '..kvVVVVVVVVvk..',
+  '..kvvvvvvvvvvk..',
+  '..kkwwwkkkkkk...',
+  '..kvwwwkVVVvk...',
+  '..kvkkkkVVVvk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+const CHAT_WORK = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....kskksskk....',
+  '....kssssskk....',
+  '...kvvvvvvvvk...',
+  '..kvVVVVVVVVvk..',
+  '.kkvvvvvvvvvvkk.',
+  '..kkwwwkkVVVkk..',
+  '..kvwwwkVVVvk...',
+  '..kvwwwkkkkvk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
 /* ------------------------------------------------------------------ */
 
 /** 名前でスプライトを引く。idle と work の2フレームを持つ。 */
@@ -546,7 +637,9 @@ export const SPRITES = {
   observer:         { idle: OBSERVER_IDLE,  work: OBSERVER_WORK },
   recruiter:        { idle: RECRUITER_IDLE, work: RECRUITER_WORK },
   cutter:           { idle: CUTTER_IDLE,    work: CUTTER_WORK },
-  mixer:            { idle: MIXER_IDLE,     work: MIXER_WORK }
+  mixer:            { idle: MIXER_IDLE,     work: MIXER_WORK },
+  'sales-hilura':   { idle: HILURA_IDLE,   work: HILURA_WORK },
+  'sales-chat':     { idle: CHAT_IDLE,     work: CHAT_WORK }
 };
 
 /*
