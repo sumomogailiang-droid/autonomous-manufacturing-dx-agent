@@ -1,30 +1,20 @@
 /*
  * office-panel.js
  *
- * オフィス画面の組み立て。等角の絵（office.js）に、
- * 稼働状況・吹き出し・作業ログ・役割定義を重ねる。
+ * ENGULF のオフィス画面の組み立て。
+ * 等角の絵（office.js）に、稼働状況・吹き出し・会話・作業ログ・役割定義を重ねる。
  *
- * === 「誰が今動いているか」をどう出すか ===
+ * === 本物と再現の区別 ===
  *
- * ブラウザは stdio の MCP サーバーへ直接つながらない。
- * つまりターミナルで動いているエージェントの様子は、そのままでは見えない。
+ * この画面には2種類の動きがある。混ぜないことが一番大事。
  *
- * そこで、このページ自身が実際に行える作業だけを並べ、
- * それを実行している間だけ担当エージェントの席を動かす。
- * 見せかけのアニメーションではなく、本当にその場で根拠を引いている。
+ * 1. 作業ボタンの実行 …… 本物。MANUAL_DATA から実際に値を引く。
+ * 2. 働いている風景   …… 再現。移動・会話はアンビエントで、
+ *    台詞の内容は office-ambient.js にある実在ルールの台本から出る。
  *
- *   表記チェック  → common-manual が辞書122件と照合する
- *   数値照会      → common-manual が数値基準を引く
- *   演出頻度の確認 → project-manual が矛盾を確認する
- *   図解ルール    → design が制作ルールを引く
- *   テロップ規定  → telop がテロップの基準を引く
- *   品質判定      → director が品質評価レベルを引く
- *   全体監査      → cto が監査結果を集計する
- *
- * どの作業でも MCP サーバー（ラック）が光る。全員の接続口だから。
- *
- * ターミナル側の稼働まで映したい場合はローカルサーバーが要る。
- * このファイルはそこまではやらない（できないことをできるように見せない）。
+ * どちらであるかは画面にも明記する（凡例とログの種別）。
+ * ブラウザは stdio の MCP サーバーへ直接つながらないため、
+ * ターミナル側の稼働そのものは映せない。できないことをできるように見せない。
  */
 
 (function (root, factory) {
@@ -34,13 +24,10 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  var STATE_LABEL = { idle: '待機中', working: '作業中', done: '完了' };
+  var STATE_LABEL = { idle: '待機中', working: '作業中', talking: '会話中', away: '離席中' };
 
   /* ---------------------------------------------------------------- */
-  /* 作業の定義                                                         */
-  /*                                                                    */
-  /* work は MANUAL_DATA から本当に値を引いて結果を返す関数。            */
-  /* 記憶で文章を作らない。データに無いことは「記載なし」と返す。        */
+  /* 作業の定義（本物。MANUAL_DATA から実際に値を引く）                  */
   /* ---------------------------------------------------------------- */
 
   function buildJobs(D) {
@@ -50,9 +37,7 @@
 
     return [
       {
-        id: 'notation',
-        agent: 'common-manual',
-        label: '表記チェック',
+        id: 'notation', agent: 'common-manual', label: '表記チェック',
         say: '表記揺れ辞書と照合します',
         work: function () {
           var n = D.dictionary.length + D.splitEditDictionary.length;
@@ -67,9 +52,7 @@
         }
       },
       {
-        id: 'numbers',
-        agent: 'common-manual',
-        label: '数値基準を引く',
+        id: 'numbers', agent: 'common-manual', label: '数値基準を引く',
         say: '数字は丸めずそのまま出します',
         work: function () {
           var rows = [];
@@ -86,9 +69,7 @@
         }
       },
       {
-        id: 'conflicts',
-        agent: 'project-manual',
-        label: '未決定の確認',
+        id: 'conflicts', agent: 'project-manual', label: '未決定の確認',
         say: '案件側で上書きされているか見ます',
         work: function () {
           var rows = (D.audit && D.audit.conflicts ? D.audit.conflicts : []).map(function (c) {
@@ -102,9 +83,26 @@
         }
       },
       {
-        id: 'design',
-        agent: 'design',
-        label: '図解ルールを引く',
+        id: 'cutrules', agent: 'cutter', label: 'カット基準を引く',
+        say: '候補はフレーム番号で出します',
+        work: function () {
+          var proc = (D.processes || []).filter(function (pr) {
+            return /粗カット|細カット/.test(pr.title || pr.name || '');
+          });
+          var rows = [];
+          proc.forEach(function (pr) {
+            (pr.actions || pr.what || []).slice(0, 3).forEach(function (t) { rows.push(t); });
+          });
+          if (!rows.length) rows.push('工程4（粗カット）・工程5（細カット）の詳細は全体工程マップ参照');
+          return {
+            headline: 'カットの基準（工程4・5）',
+            rows: rows.slice(0, 8),
+            note: '自動ツールの出力も必ず目視確認します。ケバは取りすぎると不自然になります。カット対象は案件マニュアルが優先です。'
+          };
+        }
+      },
+      {
+        id: 'design', agent: 'design', label: '図解ルールを引く',
         say: '生成前に制約を確認します',
         work: function () {
           var g = D.numericStandards.filter(function (x) {
@@ -127,9 +125,7 @@
         }
       },
       {
-        id: 'telop',
-        agent: 'telop',
-        label: 'テロップ規定を引く',
+        id: 'telop', agent: 'telop', label: 'テロップ規定を引く',
         say: '改行位置と表記だけ整えます',
         work: function () {
           var grp = D.numericStandards.filter(function (x) { return /テロップ/.test(x.group); })[0];
@@ -144,9 +140,22 @@
         }
       },
       {
-        id: 'quality',
-        agent: 'director',
-        label: '品質評価レベル',
+        id: 'audio', agent: 'mixer', label: '音量基準を引く',
+        say: 'dB値は丸めません',
+        work: function () {
+          var grp = D.numericStandards.filter(function (x) { return /音量|音声/.test(x.group); })[0];
+          var rows = (grp ? grp.items : []).map(function (it) {
+            return it.name + ' = ' + it.value + (it.unit ? ' ' + it.unit : '');
+          });
+          return {
+            headline: '音量・音声処理の基準',
+            rows: rows.slice(0, 9),
+            note: 'SEは演出テロップ・画像・画角変化とセット。同じSEを連続で使いません。BGMは最後に入れます。'
+          };
+        }
+      },
+      {
+        id: 'quality', agent: 'director', label: '品質評価レベル',
         say: '提出してよいか決めます',
         work: function () {
           var rows = (D.qualityLevels || []).map(function (q) {
@@ -161,9 +170,7 @@
         }
       },
       {
-        id: 'audit',
-        agent: 'cto',
-        label: '全体監査',
+        id: 'audit', agent: 'cto', label: '全体監査',
         say: '印象では判断しません',
         work: function () {
           var a = D.audit || {};
@@ -185,8 +192,17 @@
     ];
   }
 
+  /* 実在の生成物。成果物モニターに出す。 */
+  var DELIVERABLES = [
+    { file: 'agents/knowledge/common-manual.md', desc: '共通マニュアル知識ベース（自動生成）' },
+    { file: 'uxp-plugin/data/manual-snapshot.js', desc: 'Premiereプラグイン用スナップショット' },
+    { file: 'video-manual-visualizer/office-data.js', desc: '役割定義の写し（11席）' },
+    { file: 'agents/roadmap-frame-zero.md', desc: 'FRAME ZERO 完全自動化ロードマップ' },
+    { file: 'dist/index.html', desc: '配布用1ファイルWebアプリ' }
+  ];
+
   /* ---------------------------------------------------------------- */
-  /* 組み立て                                                           */
+  /* ユーティリティ                                                     */
   /* ---------------------------------------------------------------- */
 
   function esc(s) {
@@ -195,81 +211,176 @@
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  function now() {
+    var d = new Date();
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* 組み立て                                                           */
+  /* ---------------------------------------------------------------- */
+
   /**
    * @param {HTMLElement} host  描画先
    * @param {object} office     office-data.js
    * @param {object} D          manual-data.js
    */
   function build(host, office, D) {
-    var scene = root_IsoOffice().render(office);
+    var Iso = root_get('IsoOffice', 'office.js');
+    var AMB = root_get('OFFICE_AMBIENT', 'office-ambient.js');
+    var scene = Iso.render(office);
     var jobs = buildJobs(D);
     var byId = {};
     office.agents.forEach(function (a) { byId[a.id] = a; });
 
+    var reduceMotion = false;
+    try {
+      reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (e) { /* Node環境では無視 */ }
+
+    var co = office.company || { name: 'ENGULF', project: '', mission: '' };
+
     host.innerHTML =
       '<div class="office">' +
         '<div class="office-main">' +
+
+          /* --- 会社ヘッダー --- */
+          '<header class="engulf-head">' +
+            '<div class="engulf-brand">' +
+              '<span class="engulf-logo">' + esc(co.name) + '</span>' +
+              '<span class="engulf-project">PROJECT: ' + esc(co.project) + '</span>' +
+            '</div>' +
+            '<p class="engulf-mission">' + esc(co.mission) + '</p>' +
+            '<div class="engulf-meta">' +
+              '<span class="engulf-chip engulf-chip-gold">Claude Code チーム ' +
+                office.agents.filter(function (a) { return a.runtime === 'Claude Code'; }).length + '名</span>' +
+              '<span class="engulf-chip engulf-chip-ocean">Codex チーム ' +
+                office.agents.filter(function (a) { return a.runtime === 'Codex'; }).length + '名</span>' +
+              '<button type="button" class="engulf-toggle" id="ambient-toggle" aria-pressed="true">' +
+                '働く風景の再現：ON</button>' +
+            '</div>' +
+          '</header>' +
+
+          /* --- 舞台 --- */
           '<div class="office-stage" id="office-stage">' +
             scene.svg +
             '<div class="office-bubbles" id="office-bubbles"></div>' +
+            '<div class="office-zonelabels" id="office-zonelabels"></div>' +
             '<div class="office-badge" id="office-badge">' +
-            '<span class="office-dot"></span><span data-badge>全員待機中</span></div>' +
+              '<span class="office-dot"></span><span data-badge>全員待機中</span></div>' +
           '</div>' +
+
+          '<p class="office-legend">会話・移動は体制ルールとマニュアルに基づく<strong>再現</strong>です。' +
+            '下の<strong>作業ボタン</strong>の実行だけが実データ照会です。</p>' +
+
           '<div class="office-jobs" id="office-jobs" role="group" aria-label="実行できる作業"></div>' +
           '<div class="office-result" id="office-result" aria-live="polite"></div>' +
         '</div>' +
+
         '<aside class="office-side">' +
           '<h3 class="office-h">在席</h3>' +
-          '<ul class="office-roster" id="office-roster"></ul>' +
+          '<div id="office-roster"></div>' +
+          '<h3 class="office-h">成果物モニター</h3>' +
+          '<ul class="office-deliv" id="office-deliv"></ul>' +
           '<h3 class="office-h">作業ログ</h3>' +
           '<ol class="office-log" id="office-log" aria-live="polite"></ol>' +
         '</aside>' +
       '</div>';
 
     var stage = host.querySelector('#office-stage');
+    var svgEl = stage.querySelector('svg');
+    var walkLayer = stage.querySelector('#iso-walkers');
     var bubbles = host.querySelector('#office-bubbles');
+    var zoneLabels = host.querySelector('#office-zonelabels');
     var roster = host.querySelector('#office-roster');
     var log = host.querySelector('#office-log');
     var result = host.querySelector('#office-result');
     var jobsBox = host.querySelector('#office-jobs');
     var badge = host.querySelector('#office-badge');
+    var delivBox = host.querySelector('#office-deliv');
+    var toggleBtn = host.querySelector('#ambient-toggle');
 
-    /* --- 吹き出しの土台を席の数だけ用意する --------------------- */
     var vb = scene.viewBox;
+
+    /* viewBox座標 → ステージ内の% */
+    function toPct(pt) {
+      return {
+        left: (((pt.x - vb.x) / vb.w) * 100).toFixed(2) + '%',
+        top: (((pt.y - vb.y) / vb.h) * 100).toFixed(2) + '%'
+      };
+    }
+
+    /* --- 部門ラベル ------------------------------------------------ */
+    [
+      { key: 'audit', text: '監査室', cls: '' },
+      { key: 'claude', text: '制作部門｜Claude Code チーム', cls: 'is-gold' },
+      { key: 'codex', text: '制作部門｜Codex チーム', cls: 'is-ocean' }
+    ].forEach(function (z) {
+      var pos = toPct(scene.zoneLabels[z.key]);
+      var el = document.createElement('span');
+      el.className = 'office-zonelabel ' + z.cls;
+      el.textContent = z.text;
+      el.style.left = pos.left;
+      el.style.top = pos.top;
+      zoneLabels.appendChild(el);
+    });
+
+    /* --- 吹き出し --------------------------------------------------- */
     office.agents.forEach(function (a) {
-      var p = scene.anchors[a.id];
+      var pos = toPct(scene.anchors[a.id]);
       var b = document.createElement('div');
       b.className = 'office-bubble';
       b.dataset.agent = a.id;
-      /* viewBox座標を％へ直す。SVGが伸縮しても位置がずれない。 */
-      b.style.left = (((p.x - vb.x) / vb.w) * 100).toFixed(2) + '%';
-      b.style.top = (((p.y - vb.y) / vb.h) * 100).toFixed(2) + '%';
+      b.style.left = pos.left;
+      b.style.top = pos.top;
       bubbles.appendChild(b);
     });
+    /* 会話用の追加吹き出し（歩行者・テーブル用） */
+    var freeBubble = document.createElement('div');
+    freeBubble.className = 'office-bubble office-bubble-free';
+    bubbles.appendChild(freeBubble);
 
-    /* --- 在席一覧 ------------------------------------------------- */
-    /* AGENTS.md の体制順に並べる。CTOは制作チームの外なので先頭、設備は末尾。 */
-    var ORDER = ['cto', 'director', 'common-manual', 'project-manual', 'design', 'telop', 'mcp'];
-    var rosterOrder = office.agents.slice().sort(function (x, z) {
-      return ORDER.indexOf(x.id) - ORDER.indexOf(z.id);
+    /* --- 在席一覧（部門ごと） --------------------------------------- */
+    var teams = office.teams || {};
+    var order = Object.keys(teams).sort(function (a, b) {
+      return (teams[a].order || 9) - (teams[b].order || 9);
+    });
+    order.forEach(function (tk) {
+      var members = office.agents.filter(function (a) { return a.team === tk; });
+      if (!members.length) return;
+      var h = document.createElement('h4');
+      h.className = 'office-team-h' +
+        (tk === 'claude' ? ' is-gold' : tk === 'codex' ? ' is-ocean' : '');
+      h.textContent = teams[tk].label;
+      roster.appendChild(h);
+      var ul = document.createElement('ul');
+      ul.className = 'office-roster';
+      members.forEach(function (a) {
+        var li = document.createElement('li');
+        li.className = 'office-seat';
+        li.dataset.agent = a.id;
+        li.innerHTML =
+          '<button type="button" class="office-seat-btn">' +
+            '<span class="office-chip" style="background:' + esc(a.accent) + '"></span>' +
+            '<span class="office-seat-name">' + esc(a.label) + '</span>' +
+            '<span class="office-seat-role">' + esc(a.runtime) + '</span>' +
+            '<span class="office-seat-state" data-state>待機中</span>' +
+          '</button>';
+        li.querySelector('button').addEventListener('click', function () { showRole(a.id); });
+        ul.appendChild(li);
+      });
+      roster.appendChild(ul);
     });
 
-    rosterOrder.forEach(function (a) {
+    /* --- 成果物モニター --------------------------------------------- */
+    DELIVERABLES.forEach(function (d) {
       var li = document.createElement('li');
-      li.className = 'office-seat';
-      li.dataset.agent = a.id;
-      li.innerHTML =
-        '<button type="button" class="office-seat-btn">' +
-          '<span class="office-chip" style="background:' + esc(a.accent) + '"></span>' +
-          '<span class="office-seat-name">' + esc(a.label) + '</span>' +
-          '<span class="office-seat-role">' + esc(a.runtime) + '</span>' +
-          '<span class="office-seat-state" data-state>待機中</span>' +
-        '</button>';
-      li.querySelector('button').addEventListener('click', function () { showRole(a.id); });
-      roster.appendChild(li);
+      li.innerHTML = '<code>' + esc(d.file) + '</code><span>' + esc(d.desc) + '</span>';
+      delivBox.appendChild(li);
     });
 
-    /* --- 実行できる作業 ------------------------------------------- */
+    /* --- 作業ボタン -------------------------------------------------- */
     jobs.forEach(function (j) {
       var b = document.createElement('button');
       b.type = 'button';
@@ -282,10 +393,18 @@
       jobsBox.appendChild(b);
     });
 
-    /* --- 稼働の切り替え ------------------------------------------- */
+    /* --- 状態の管理 -------------------------------------------------- */
+
+    function seatGroup(id) {
+      return stage.querySelector('.iso-agent[data-agent="' + id + '"]');
+    }
+
     function setState(id, state) {
-      var g = stage.querySelector('[data-agent="' + id + '"]');
-      if (g) g.classList.toggle('is-working', state === 'working');
+      var g = seatGroup(id);
+      if (g) {
+        g.classList.toggle('is-working', state === 'working' || state === 'talking');
+        g.classList.toggle('is-away', state === 'away');
+      }
       var seat = roster.querySelector('.office-seat[data-agent="' + id + '"] [data-state]');
       if (seat) {
         seat.textContent = STATE_LABEL[state] || state;
@@ -296,9 +415,9 @@
 
     /* バッジは実際に動いている席の数を出す。常時「稼働中」と出すと嘘になる。 */
     function refreshBadge() {
-      if (!badge) return;
-      var n = stage.querySelectorAll('.iso-agent.is-working').length;
-      badge.querySelector('[data-badge]').textContent = n ? n + '名が作業中' : '全員待機中';
+      var n = stage.querySelectorAll('.iso-agent.is-working').length +
+        walkLayer.querySelectorAll('.iso-walker').length;
+      badge.querySelector('[data-badge]').textContent = n ? n + '名が活動中' : '全員待機中';
       badge.classList.toggle('is-live', n > 0);
     }
 
@@ -309,14 +428,28 @@
       b.classList.toggle('is-on', !!text);
     }
 
-    function addLog(agentLabel, text, color) {
-      var li = document.createElement('li');
-      li.innerHTML = '<span class="office-chip" style="background:' + esc(color) + '"></span>' +
-        '<span class="office-log-who">' + esc(agentLabel) + '</span>' +
-        '<span class="office-log-what">' + esc(text) + '</span>';
-      log.insertBefore(li, log.firstChild);
-      while (log.children.length > 12) log.removeChild(log.lastChild);
+    function sayAt(pt, text) {
+      if (!text) { freeBubble.classList.remove('is-on'); return; }
+      var pos = toPct(pt);
+      freeBubble.style.left = pos.left;
+      freeBubble.style.top = pos.top;
+      freeBubble.textContent = text;
+      freeBubble.classList.add('is-on');
     }
+
+    function addLog(kind, who, what, color) {
+      var li = document.createElement('li');
+      li.className = 'is-' + kind;
+      li.innerHTML =
+        '<time>' + now() + '</time>' +
+        '<span class="office-chip" style="background:' + esc(color || '#888') + '"></span>' +
+        '<span class="office-log-who">' + esc(who) + '</span>' +
+        '<span class="office-log-what">' + esc(what) + '</span>';
+      log.insertBefore(li, log.firstChild);
+      while (log.children.length > 14) log.removeChild(log.lastChild);
+    }
+
+    /* --- 本物の作業（実データ照会） ---------------------------------- */
 
     var busy = false;
 
@@ -325,14 +458,11 @@
       busy = true;
 
       var a = byId[job.agent];
-      var mcp = byId.mcp;
-
       setState(job.agent, 'working');
       setState('mcp', 'working');
       say(job.agent, job.say);
-      addLog(a.label, job.label + ' を開始', a.accent);
+      addLog('real', a.label, job.label + ' を開始（実データ照会）', a.accent);
 
-      /* 実際にデータを引く。失敗しても席が動いたままにならないようにする。 */
       var out;
       try {
         out = job.work();
@@ -340,13 +470,11 @@
         out = { headline: '取得できませんでした', rows: [String(e && e.message || e)], note: '' };
       }
 
-      /* 席が動いているのを見せるための最小の間。処理そのものは即座に終わっている。 */
       window.setTimeout(function () {
         setState(job.agent, 'idle');
         setState('mcp', 'idle');
         say(job.agent, '');
-        addLog(a.label, job.label + ' を完了', a.accent);
-        if (mcp) addLog(mcp.label, '根拠を返しました', mcp.accent);
+        addLog('real', a.label, job.label + ' を完了', a.accent);
 
         result.innerHTML =
           '<div class="office-result-head">' +
@@ -362,7 +490,8 @@
       }, 700);
     }
 
-    /* --- 役割定義 -------------------------------------------------- */
+    /* --- 役割定義 ----------------------------------------------------- */
+
     function showRole(id) {
       var a = byId[id];
       if (!a) return;
@@ -382,7 +511,6 @@
         '　この1箇所を Claude Code と Codex の両方が読みます。</p>';
     }
 
-    /* 席をクリックしても役割が出る */
     Array.prototype.forEach.call(stage.querySelectorAll('.iso-agent'), function (g) {
       g.addEventListener('click', function () { showRole(g.dataset.agent); });
       g.addEventListener('keydown', function (e) {
@@ -390,15 +518,178 @@
       });
     });
 
-    addLog('MCPサーバー', '接続を待機しています', byId.mcp ? byId.mcp.accent : '#888');
+    /* ================================================================ */
+    /* アンビエント（働いている風景の再現）                                */
+    /* ================================================================ */
+
+    var ambientOn = !reduceMotion;
+    var ambientTimer = null;
+    var visitActive = false;
+
+    toggleBtn.setAttribute('aria-pressed', ambientOn ? 'true' : 'false');
+    toggleBtn.textContent = '働く風景の再現：' + (ambientOn ? 'ON' : 'OFF');
+    toggleBtn.addEventListener('click', function () {
+      ambientOn = !ambientOn;
+      toggleBtn.setAttribute('aria-pressed', ambientOn ? 'true' : 'false');
+      toggleBtn.textContent = '働く風景の再現：' + (ambientOn ? 'ON' : 'OFF');
+      if (ambientOn) scheduleAmbient(1200);
+      else if (ambientTimer) { clearTimeout(ambientTimer); ambientTimer = null; }
+    });
+
+    function gridCenter(id) {
+      var a = byId[id];
+      return { x: a.seat[0] + 1.0, y: a.seat[1] + 0.5 };
+    }
+
+    /** 席の前（手前側）の立ち位置 */
+    function gridFront(id) {
+      var a = byId[id];
+      return { x: a.seat[0] + 1.0, y: a.seat[1] + 2.6 };
+    }
+
+    /**
+     * 歩行者。立ち姿を transform で動かす。
+     * 投影が線形なので、grid座標を補間して project するだけで直線移動になる。
+     */
+    function makeWalker(agent) {
+      var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'iso-walker');
+      g.innerHTML = Iso.standingPerson(agent, office.palette);
+      walkLayer.appendChild(g);
+      return {
+        el: g,
+        moveTo: function (grid) {
+          var pt = Iso.project(grid.x - 0.5, grid.y - 0.5, 0);
+          g.setAttribute('transform', 'translate(' + pt.x.toFixed(1) + ',' + pt.y.toFixed(1) + ')');
+          this.grid = grid;
+        },
+        headPoint: function () {
+          return Iso.project(this.grid.x, this.grid.y, 1.9);
+        },
+        walkingClass: function (on) { g.classList.toggle('is-walking', on); },
+        remove: function () { g.remove(); refreshBadge(); }
+      };
+    }
+
+    /** grid間を歩く。速度は一定。 */
+    function walk(walker, from, to, done) {
+      var dist = Math.hypot(to.x - from.x, to.y - from.y);
+      var dur = Math.max(600, dist * 260);
+      var t0 = performance.now();
+      walker.walkingClass(true);
+      function step(t) {
+        var k = Math.min(1, (t - t0) / dur);
+        /* 緩やかに出て緩やかに止まる */
+        var e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        walker.moveTo({ x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e });
+        if (k < 1 && ambientOn) requestAnimationFrame(step);
+        else { walker.walkingClass(false); done(); }
+      }
+      requestAnimationFrame(step);
+    }
+
+    /** 会話シーンを1本再生する */
+    function playScene(sc) {
+      if (visitActive) return;
+      var from = byId[sc.from];
+      var to = byId[sc.to];
+      if (!from || !to) return;
+      visitActive = true;
+
+      var start = gridCenter(sc.from);
+      var goal = sc.place === 'meeting'
+        ? { x: scene.meeting.grid[0] - 0.9, y: scene.meeting.grid[1] + 0.3 }
+        : gridFront(sc.to);
+
+      setState(sc.from, 'away');
+      addLog('scene', from.label, to.label + 'のところへ相談に向かう（再現）', from.accent);
+
+      var walker = makeWalker(from);
+      walker.moveTo(start);
+      refreshBadge();
+
+      walk(walker, start, goal, function () {
+        setState(sc.to, 'talking');
+        var i = 0;
+        function nextLine() {
+          if (!ambientOn || i >= sc.lines.length) {
+            sayAt(null, '');
+            say(sc.to, '');
+            setState(sc.to, 'idle');
+            addLog('scene', 'ENGULF', '出典：' + sc.source, '#8a8f98');
+            walk(walker, goal, start, function () {
+              walker.remove();
+              setState(sc.from, 'idle');
+              visitActive = false;
+            });
+            return;
+          }
+          var line = sc.lines[i];
+          var speaker = byId[line[0]];
+          if (line[0] === sc.from) {
+            say(sc.to, '');
+            sayAt(walker.headPoint(), line[1]);
+          } else {
+            sayAt(null, '');
+            say(sc.to, line[1]);
+          }
+          addLog('scene', speaker.label, line[1], speaker.accent);
+          i++;
+          window.setTimeout(nextLine, 2600);
+        }
+        nextLine();
+      });
+    }
+
+    /** 席で作業する様子を1回見せる */
+    function playWorkPulse() {
+      var ids = Object.keys(AMB.WORK_LINES).filter(function (id) {
+        var g = seatGroup(id);
+        return g && !g.classList.contains('is-away') && !g.classList.contains('is-working');
+      });
+      if (!ids.length) return;
+      var id = ids[Math.floor(Math.random() * ids.length)];
+      var lines = AMB.WORK_LINES[id];
+      var text = lines[Math.floor(Math.random() * lines.length)];
+      var a = byId[id];
+      setState(id, 'working');
+      say(id, text);
+      addLog('scene', a.label, text, a.accent);
+      window.setTimeout(function () {
+        say(id, '');
+        setState(id, 'idle');
+      }, 2400);
+    }
+
+    var sceneIndex = 0;
+
+    function ambientTick() {
+      if (!ambientOn) return;
+      /* 会話シーンは順番に、作業パルスはランダムに。 */
+      if (!visitActive && Math.random() < 0.45) {
+        playScene(AMB.SCENES[sceneIndex % AMB.SCENES.length]);
+        sceneIndex++;
+      } else {
+        playWorkPulse();
+      }
+      scheduleAmbient(4200 + Math.random() * 3800);
+    }
+
+    function scheduleAmbient(delay) {
+      if (ambientTimer) clearTimeout(ambientTimer);
+      ambientTimer = window.setTimeout(ambientTick, delay);
+    }
+
+    /* --- 起動 -------------------------------------------------------- */
+    addLog('real', 'MCPサーバー', '接続を待機しています', byId.mcp ? byId.mcp.accent : '#888');
     showRole('cto');
+    if (ambientOn) scheduleAmbient(1600);
   }
 
-  /* office.js はグローバルへ載る。読み込み順が崩れたときに気づけるようにする。 */
-  function root_IsoOffice() {
+  function root_get(name, file) {
     var g = (typeof globalThis !== 'undefined' ? globalThis : window);
-    if (!g.IsoOffice) throw new Error('office.js が読み込まれていません');
-    return g.IsoOffice;
+    if (!g[name]) throw new Error(file + ' が読み込まれていません');
+    return g[name];
   }
 
   return { build: build, buildJobs: buildJobs };

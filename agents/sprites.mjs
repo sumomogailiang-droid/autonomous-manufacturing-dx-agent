@@ -19,6 +19,10 @@
  *   design         … ペンタブで絵を描いている
  *   telop          … キーボードで字幕を打っている
  *   mcp            … サーバーラック（人ではなく設備）
+ *   observer       … 二画面モニタで編集の様子を見比べている
+ *   recruiter      … 履歴書の束をめくっている
+ *   cutter         … フィルムをレザーで切っている
+ *   mixer          … フェーダー卓を操作している
  *
  * === アニメーション ===
  *
@@ -54,7 +58,15 @@ export const PALETTE = {
   'c': '#8a6d1f',     // 金（CTO）
   'C': '#e8c76a',     // 金ハイライト
   'm': '#8f2f28',     // 朱（ディレクター）
-  'M': '#e06b60'      // 朱ハイライト
+  'M': '#e06b60',     // 朱ハイライト
+  'a': '#0e7490',     // 縹（カット）
+  'A': '#3fc0dd',     // 縹ハイライト
+  'z': '#a1275d',     // 茜（音響）
+  'Z': '#e871ac',     // 茜ハイライト
+  'u': '#46586e',     // 鉄紺（リアルタイム監査）
+  'U': '#8ba0bd',     // 鉄紺ハイライト
+  'j': '#7c4a21',     // 褐色（人材派遣）
+  'J': '#c98a4b'      // 褐色ハイライト
 };
 
 /* ------------------------------------------------------------------ */
@@ -351,6 +363,175 @@ const MCP_WORK = [
   '................'
 ];
 
+
+/* ------------------------------------------------------------------ */
+/* リアルタイム監査 — 二画面モニタで編集の様子を見比べている              */
+/* ------------------------------------------------------------------ */
+
+const OBSERVER_IDLE = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....kukksuk.....',
+  '....kssssskk....',
+  '...kuuuuuuuuk...',
+  '..kuUUUUUUUUuk..',
+  '..kuuuuuuuuuuk..',
+  '..kkwwwkkwwwkk..',
+  '..kuwwwkkwwwuk..',
+  '..kuwwwkkwwwuk..',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+const OBSERVER_WORK = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....kukksuk.....',
+  '....kssssskk....',
+  '...kuuuuuuuuk...',
+  '..kuUUUUUUUUuk..',
+  '.kkuuuuuuuuuukk.',
+  '..kkUwwkkwwUkk..',
+  '..kuUwwkkwwUuk..',
+  '..kuwwwkkwwwuk..',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+/* ------------------------------------------------------------------ */
+/* 人材派遣 — 履歴書の束をめくっている                                    */
+/* ------------------------------------------------------------------ */
+
+const RECRUITER_IDLE = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....ksksksk.....',
+  '....kssssskk....',
+  '...kjjjjjjjjk...',
+  '..kjJJJJJJJJjk..',
+  '..kjjjjjjjjjjk..',
+  '..kkwwwwkwwkk...',
+  '..kjwswwkwsjk...',
+  '..kjwwwwkwwjk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+const RECRUITER_WORK = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....kskksskk....',
+  '....kssssskk....',
+  '...kjjjjjjjjk...',
+  '..kjJJJJJJJJjk..',
+  '.kkjjjjjjjjjjkk.',
+  '.kkwwwwwkwwwkk..',
+  '.kjwswwwkwswjk..',
+  '..kjwwwwkwwjk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+/* ------------------------------------------------------------------ */
+/* カット — フィルムをレザーで切っている                                  */
+/* ------------------------------------------------------------------ */
+
+const CUTTER_IDLE = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....ksksksk.....',
+  '....kssssskk....',
+  '...kaaaaaaaak...',
+  '..kaAAAAAAAAak..',
+  '..kaaaaaaaaaak..',
+  '..kkwkwwkwwkk...',
+  '..kawkwwkwwak...',
+  '..kkwkwwkwwkk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+const CUTTER_WORK = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....kskksskk....',
+  '....kssssskk....',
+  '...kaaaaaaaak...',
+  '..kaAAAAAAAAak..',
+  '.kkaaaaaaaaaakk.',
+  '..kkwkAAkwwkk...',
+  '..kawkAAkwwak...',
+  '..kkwkwwkwwkk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+/* ------------------------------------------------------------------ */
+/* 音響 — フェーダー卓を操作している                                      */
+/* ------------------------------------------------------------------ */
+
+const MIXER_IDLE = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....ksksksk.....',
+  '....kssssskk....',
+  '...kzzzzzzzzk...',
+  '..kzZZZZZZZZzk..',
+  '..kzzzzzzzzzzk..',
+  '..kkZgZgZgZkk...',
+  '..kzgZgggZgzk...',
+  '..kzgggZgggzk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
+const MIXER_WORK = [
+  '................',
+  '................',
+  '.....kkkkk......',
+  '....khhhhhk.....',
+  '....khssshk.....',
+  '....kskksskk....',
+  '....kssssskk....',
+  '...kzzzzzzzzk...',
+  '..kzZZZZZZZZzk..',
+  '.kkzzzzzzzzzzkk.',
+  '..kkgZgZgZgkk...',
+  '..kzZggZggZzk...',
+  '..kzggZgZggzk...',
+  '..kkGGGGGGGGkk..',
+  '..kGGGGGGGGGGk..',
+  '...k........k...'
+];
+
 /* ------------------------------------------------------------------ */
 
 /** 名前でスプライトを引く。idle と work の2フレームを持つ。 */
@@ -361,7 +542,11 @@ export const SPRITES = {
   'project-manual': { idle: PROJECT_IDLE,  work: PROJECT_WORK },
   design:           { idle: DESIGN_IDLE,   work: DESIGN_WORK },
   telop:            { idle: TELOP_IDLE,    work: TELOP_WORK },
-  mcp:              { idle: MCP_IDLE,      work: MCP_WORK }
+  mcp:              { idle: MCP_IDLE,      work: MCP_WORK },
+  observer:         { idle: OBSERVER_IDLE,  work: OBSERVER_WORK },
+  recruiter:        { idle: RECRUITER_IDLE, work: RECRUITER_WORK },
+  cutter:           { idle: CUTTER_IDLE,    work: CUTTER_WORK },
+  mixer:            { idle: MIXER_IDLE,     work: MIXER_WORK }
 };
 
 /*

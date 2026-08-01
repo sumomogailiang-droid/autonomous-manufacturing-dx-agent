@@ -46,14 +46,41 @@ const OUT = join(ROOT, 'video-manual-visualizer/office-data.js');
  *
  * seat は等角グリッドの座標。desk は机の種類。
  * ------------------------------------------------------------------ */
+/*
+ * 会社: ENGULF（エンガルフ）
+ * プロジェクト: FRAME ZERO — フレームずれゼロと、人の手数ゼロを両立させる
+ *
+ * 間取り（AGENTS.md の体制図をそのまま床にする）:
+ *   上の帯   … 監査室（CTO・リアルタイム監査・人材派遣）とサーバー室（MCP）
+ *   左ブロック … 制作部門 Claude Code チーム（判定・検証・構造化）
+ *   右ブロック … 制作部門 Codex チーム（生成・ニュアンス表現）
+ *   右下     … ミーティングテーブル（チーム間の相談はここで起きる）
+ */
 const SEATS = {
-  cto:              { seat: [6.2, 0.2], team: 'oversight', furniture: 'platform', accent: 'c', hair: 'h' },
-  director:         { seat: [0.4, 3.2], team: 'production', furniture: 'desk',    accent: 'm', hair: 'h' },
-  'common-manual':  { seat: [3.3, 3.2], team: 'production', furniture: 'desk',    accent: 'b', hair: 'h' },
-  'project-manual': { seat: [6.2, 3.2], team: 'production', furniture: 'desk',    accent: 'o', hair: 'h' },
-  design:           { seat: [0.4, 6.2], team: 'production', furniture: 'desk',    accent: 'p', hair: 'h' },
-  telop:            { seat: [3.3, 6.2], team: 'production', furniture: 'desk',    accent: 'e', hair: 'h' },
-  mcp:              { seat: [6.2, 6.2], team: 'production', furniture: 'rack',    accent: 'g', hair: null }
+  /* 監査室・設備（上の帯） */
+  mcp:              { seat: [0.5, 0.1],  team: 'infra', furniture: 'rack',     accent: 'g', hair: null },
+  observer:         { seat: [3.5, 0.1],  team: 'audit', furniture: 'desk',     accent: 'u', hair: 'h' },
+  recruiter:        { seat: [6.5, 0.1],  team: 'audit', furniture: 'desk',     accent: 'j', hair: 'h' },
+  cto:              { seat: [9.8, 0.1],  team: 'audit', furniture: 'platform', accent: 'c', hair: 'h' },
+
+  /* 制作部門 Claude Code チーム（左ブロック） */
+  director:         { seat: [0.4, 3.4],  team: 'claude', furniture: 'desk', accent: 'm', hair: 'h' },
+  'common-manual':  { seat: [3.3, 3.4],  team: 'claude', furniture: 'desk', accent: 'b', hair: 'h' },
+  'project-manual': { seat: [0.4, 6.6],  team: 'claude', furniture: 'desk', accent: 'o', hair: 'h' },
+  cutter:           { seat: [3.3, 6.6],  team: 'claude', furniture: 'desk', accent: 'a', hair: 'h' },
+
+  /* 制作部門 Codex チーム（右ブロック） */
+  design:           { seat: [7.2, 3.4],  team: 'codex', furniture: 'desk', accent: 'p', hair: 'h' },
+  telop:            { seat: [10.1, 3.4], team: 'codex', furniture: 'desk', accent: 'e', hair: 'h' },
+  mixer:            { seat: [7.2, 6.6],  team: 'codex', furniture: 'desk', accent: 'z', hair: 'h' }
+};
+
+/* 部門の表示名。在席一覧の見出しに使う。 */
+const TEAMS = {
+  audit:  { label: '監査室', order: 1 },
+  claude: { label: '制作部門｜Claude Code チーム', order: 2 },
+  codex:  { label: '制作部門｜Codex チーム', order: 3 },
+  infra:  { label: '設備', order: 4 }
 };
 
 /* 実行環境。AGENTS.md の分担表と一致させる。 */
@@ -64,7 +91,11 @@ const RUNTIME = {
   'project-manual': 'Claude Code',
   design: 'Codex',
   telop: 'Codex',
-  mcp: '共通'
+  mcp: '共通',
+  observer: 'Claude Code',
+  recruiter: 'Claude Code',
+  cutter: 'Claude Code',
+  mixer: 'Codex'
 };
 
 /* MCPサーバーは .claude/agents に定義ファイルを持たない（人ではなく設備）。
@@ -163,6 +194,14 @@ function build() {
     generatedAt: new Date().toISOString().slice(0, 10),
     source: '.claude/agents/*.md + agents/sprites.mjs',
     note: 'このファイルは tools/build-office-data.mjs が生成します。手で編集しないでください。',
+    company: {
+      name: 'ENGULF',
+      reading: 'エンガルフ',
+      project: 'FRAME ZERO',
+      mission: '高品質な動画編集の完全自動化。フレームずれゼロと、人の手数ゼロを両立させる。',
+      roadmap: 'agents/roadmap-frame-zero.md'
+    },
+    teams: TEAMS,
     palette: {
       skin: PALETTE.s,
       hair: PALETTE.h,
@@ -172,7 +211,7 @@ function build() {
       furnitureDark: PALETTE.G,
       warn: PALETTE.r
     },
-    floor: { w: 9, d: 8 },
+    floor: { w: 13, d: 9.4 },
     agents
   };
 }

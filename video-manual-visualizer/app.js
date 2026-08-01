@@ -1307,6 +1307,7 @@
     var missing = [];
     if (typeof OFFICE_DATA === 'undefined') missing.push('office-data.js');
     if (typeof IsoOffice === 'undefined') missing.push('office.js');
+    if (typeof OFFICE_AMBIENT === 'undefined') missing.push('office-ambient.js');
     if (typeof OfficePanel === 'undefined') missing.push('office-panel.js');
 
     /* 白い画面のまま原因が分からない状態を避ける。 */

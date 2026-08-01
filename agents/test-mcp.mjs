@@ -182,8 +182,9 @@ const run = async () => {
   /* 役割の共有（Codex連携の要） */
   const ag = await rpc('tools/call', { name: 'list_agents', arguments: {} });
   const agb = bodyOf(ag);
-  check('list_agents が6役割を返す', /制作チームの役割（6体）/.test(agb), agb.slice(0, 40));
-  for (const role of ['common-manual', 'project-manual', 'director', 'cto', 'design', 'telop']) {
+  check('list_agents が10役割を返す', /制作チームの役割（10体）/.test(agb), agb.slice(0, 40));
+  for (const role of ['common-manual', 'project-manual', 'director', 'cto', 'design', 'telop',
+                      'observer', 'recruiter', 'cutter', 'mixer']) {
     check(`役割 ${role} が一覧にある`, agb.includes('## ' + role));
   }
 

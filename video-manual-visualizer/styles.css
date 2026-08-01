@@ -943,3 +943,175 @@ td .note { display: block; color: var(--text-muted); font-size: 12px; margin-top
 .office-badge .office-dot { background: var(--border-strong); }
 .office-badge.is-live .office-dot { background: var(--ok); }
 .office-badge.is-live { color: var(--text); border-color: var(--ok); }
+
+/* ==================================================================== */
+/* ENGULF 会社ヘッダー・オーロラ・歩行者・会話                             */
+/* ==================================================================== */
+
+.engulf-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 18px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    linear-gradient(120deg, rgba(245, 179, 31, .10), transparent 42%),
+    linear-gradient(240deg, rgba(46, 159, 230, .10), transparent 42%),
+    var(--bg-elevated);
+}
+
+.engulf-brand { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+
+.engulf-logo {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: .34em;
+  background: linear-gradient(100deg, #b98a1e, #f5c542 38%, #2e9fe6 62%, #1d4ed8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.engulf-project {
+  font-size: .76rem;
+  letter-spacing: .18em;
+  color: var(--text-muted);
+}
+
+.engulf-mission { margin: 0; font-size: .82rem; color: var(--text-muted); }
+
+.engulf-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+
+.engulf-chip {
+  font-size: .72rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.engulf-chip-gold { border-color: rgba(245, 179, 31, .55); color: #9a7413; }
+.engulf-chip-ocean { border-color: rgba(46, 159, 230, .55); color: #2277b4; }
+:root[data-theme="dark"] .engulf-chip-gold { color: #f0c46b; }
+:root[data-theme="dark"] .engulf-chip-ocean { color: #6fc3f0; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .engulf-chip-gold { color: #f0c46b; }
+  :root:not([data-theme="light"]) .engulf-chip-ocean { color: #6fc3f0; }
+}
+
+.engulf-toggle {
+  margin-left: auto;
+  font: inherit;
+  font-size: .74rem;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+}
+.engulf-toggle[aria-pressed="true"] { border-color: var(--ok); }
+.engulf-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* --- オーロラ（チームの枠光） --------------------------------------- */
+
+.iso-aura { opacity: .55; }
+.iso-agent.is-working .iso-aura,
+.iso-agent:hover .iso-aura { opacity: .95; }
+
+/* 呼吸のようなゆらぎ。点滅ではなくゆっくり。 */
+@keyframes aura-breathe {
+  0%, 100% { opacity: .45; }
+  50% { opacity: .75; }
+}
+.iso-aura { animation: aura-breathe 4.6s ease-in-out infinite; }
+.iso-agent.is-working .iso-aura { animation: aura-breathe 1.8s ease-in-out infinite; }
+
+/* 体の縁取り。オーロラの色でにじませる。 */
+.iso-agent[data-aura="gold"] .iso-person { filter: drop-shadow(0 0 4px rgba(245, 197, 66, .8)); }
+.iso-agent[data-aura="ocean"] .iso-person { filter: drop-shadow(0 0 4px rgba(56, 207, 217, .8)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .iso-aura { animation: none; }
+}
+
+/* --- 歩行者 --------------------------------------------------------- */
+
+.iso-walker .iso-leg { transform-origin: center 100%; }
+.iso-walker.is-walking .iso-leg-l { animation: leg-swing .42s ease-in-out infinite alternate; }
+.iso-walker.is-walking .iso-leg-r { animation: leg-swing .42s ease-in-out infinite alternate-reverse; }
+@keyframes leg-swing { from { transform: translateY(0); } to { transform: translateY(-2.6px); } }
+
+/* 離席中は席から人が消える（歩行者として歩いている） */
+.iso-agent.is-away .iso-person,
+.iso-agent.is-away .iso-arm { opacity: 0; transition: opacity .3s ease; }
+
+/* --- 部門ラベル ------------------------------------------------------ */
+
+.office-zonelabels { position: absolute; inset: 10px 8px 4px; pointer-events: none; }
+
+.office-zonelabel {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: .68rem;
+  letter-spacing: .06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .78);
+  border: 1px solid rgba(0, 0, 0, .14);
+  color: #4c4638;
+  white-space: nowrap;
+}
+.office-zonelabel.is-gold { border-color: rgba(245, 179, 31, .6); color: #8a6a12; }
+.office-zonelabel.is-ocean { border-color: rgba(46, 159, 230, .6); color: #1e6fa8; }
+
+/* --- 凡例・ログ種別 -------------------------------------------------- */
+
+.office-legend {
+  margin: 0;
+  font-size: .74rem;
+  color: var(--text-muted);
+}
+.office-legend strong { color: var(--text); }
+
+.office-log li { grid-template-columns: auto auto auto minmax(0, 1fr); }
+.office-log time { font-size: .68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.office-log li.is-real .office-log-what { font-weight: 600; }
+.office-log li.is-scene { opacity: .85; }
+
+/* --- 成果物モニター --------------------------------------------------- */
+
+.office-deliv {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.office-deliv li { display: flex; flex-direction: column; gap: 1px; }
+.office-deliv code {
+  font-size: .7rem;
+  color: var(--text);
+  background: var(--bg-sunken);
+  padding: 1px 6px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+.office-deliv span { font-size: .7rem; color: var(--text-muted); }
+
+/* --- SVG内の文字（サイン・ボード） ----------------------------------- */
+
+.iso-sign-main {
+  font-family: inherit;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 10px;
+  fill: #3a3325;
+}
+.iso-sign-sub {
+  font-size: 7.5px;
+  letter-spacing: 3.2px;
+  fill: #8a7d63;
+}
+.iso-board-title { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; fill: #e8e3d6; }
+.iso-board-line { font-size: 7px; fill: #9aa2ad; }

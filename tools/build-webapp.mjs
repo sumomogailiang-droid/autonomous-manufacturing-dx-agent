@@ -45,6 +45,7 @@ const SCRIPTS = [
   'manual-data.js',
   'office-data.js',
   'office.js',
+  'office-ambient.js',
   'office-panel.js',
   'app.js'
 ];

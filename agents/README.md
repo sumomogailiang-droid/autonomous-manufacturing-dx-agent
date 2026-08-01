@@ -51,14 +51,18 @@ node agents/test-mcp.mjs
 
 サブエージェントも使えます。
 
-| エージェント | 用途 | 主な実行環境 |
-|---|---|---|
-| `common-manual` | 共通ルールの判定・素材確認・提出前チェック | Claude Code |
-| `project-manual` | 案件独自ルールを共通へ上書きして判断 | Claude Code |
-| `director` | 編集品質の採点・提出可否・矛盾の方針決定 | Claude Code |
-| `cto` | 全体監査・GO/NO-GO判定・裁定 | Claude Code |
-| `design` | 図解・画像の生成 | **Codex** |
-| `telop` | 文字起こし→テロップ | **Codex** |
+| エージェント | 用途 | 所属 | 主な実行環境 |
+|---|---|---|---|
+| `cto` | 全体監査・GO/NO-GO判定・裁定 | 監査室 | Claude Code |
+| `observer` | リアルタイム監査。編集の意図の記録 | 監査室 | Claude Code |
+| `recruiter` | 人材設計（CTO承認制） | 監査室 | Claude Code |
+| `director` | 編集品質の採点・提出可否・矛盾の方針決定 | 制作・Claude Code | Claude Code |
+| `common-manual` | 共通ルールの判定・素材確認・提出前チェック | 制作・Claude Code | Claude Code |
+| `project-manual` | 案件独自ルールを共通へ上書きして判断 | 制作・Claude Code | Claude Code |
+| `cutter` | カット候補の検出（確定はしない） | 制作・Claude Code | Claude Code |
+| `design` | 図解・画像の生成 | 制作・Codex | **Codex** |
+| `telop` | 文字起こし→テロップ | 制作・Codex | **Codex** |
+| `mixer` | SE・BGM・音声処理 | 制作・Codex | **Codex** |
 
 ## ターミナルから使う
 
@@ -100,6 +104,10 @@ Claude Code や Codex とまったく同じツールを叩きます。答えが�
 | project-manual | 琥珀色の案件フォルダを広げている |
 | design | 紫のペンタブで絵を描いている |
 | telop | 緑のキーボードで字幕を打っている |
+| observer | 鉄紺の二画面モニタで編集を見比べている |
+| recruiter | 褐色の履歴書の束をめくっている |
+| cutter | 縹色のフィルムをレザーで切っている |
+| mixer | 茜色のフェーダー卓を操作している |
 | mcp | サーバーラック（人ではなく設備） |
 
 各エージェントに **idle（静止）** と **work（作業中）** の2フレームがあり、

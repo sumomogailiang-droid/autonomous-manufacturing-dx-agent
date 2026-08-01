@@ -16,6 +16,31 @@
     "generatedAt": "2026-08-01",
     "source": ".claude/agents/*.md + agents/sprites.mjs",
     "note": "このファイルは tools/build-office-data.mjs が生成します。手で編集しないでください。",
+    "company": {
+      "name": "ENGULF",
+      "reading": "エンガルフ",
+      "project": "FRAME ZERO",
+      "mission": "高品質な動画編集の完全自動化。フレームずれゼロと、人の手数ゼロを両立させる。",
+      "roadmap": "agents/roadmap-frame-zero.md"
+    },
+    "teams": {
+      "audit": {
+        "label": "監査室",
+        "order": 1
+      },
+      "claude": {
+        "label": "制作部門｜Claude Code チーム",
+        "order": 2
+      },
+      "codex": {
+        "label": "制作部門｜Codex チーム",
+        "order": 3
+      },
+      "infra": {
+        "label": "設備",
+        "order": 4
+      }
+    },
     "palette": {
       "skin": "#e8b48c",
       "hair": "#3a3f4a",
@@ -26,8 +51,8 @@
       "warn": "#b3261e"
     },
     "floor": {
-      "w": 9,
-      "d": 8
+      "w": 13,
+      "d": 9.4
     },
     "agents": [
       {
@@ -62,9 +87,9 @@
         "sourceFile": ".claude/agents/common-manual.md",
         "seat": [
           3.3,
-          3.2
+          3.4
         ],
-        "team": "production",
+        "team": "claude",
         "furniture": "desk",
         "accent": "#1d4ed8",
         "accentLight": "#5b8cff",
@@ -102,13 +127,47 @@
         "isEquipment": false,
         "sourceFile": ".claude/agents/cto.md",
         "seat": [
-          6.2,
-          0.2
+          9.8,
+          0.1
         ],
-        "team": "oversight",
+        "team": "audit",
         "furniture": "platform",
         "accent": "#8a6d1f",
         "accentLight": "#e8c76a",
+        "hair": "#3a3f4a",
+        "runtime": "Claude Code"
+      },
+      {
+        "id": "cutter",
+        "label": "カットエージェント",
+        "title": "カットエージェント（制作部門 Claude Code チーム）",
+        "description": "カットエージェント。工程4（粗カット）・工程5（細カット）の自動化を担う。文字起こしと無音区間からカット候補（フレーム番号のIN/OUT）を作る。ケバ（えーと・あのー）・復唱・言い直し・息の吸い込みを検出するが、確定はしない。カット案は必ず目視確認を経る。粗カットの候補が欲しいとき、カット漏れを機械的に洗いたいときに使う。",
+        "tools": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Bash"
+        ],
+        "model": "sonnet",
+        "sections": [
+          "なぜこの役割が要るか",
+          "何をするか",
+          "判断の基準（共通マニュアルより）",
+          "案件による上書き",
+          "やってはいけないこと",
+          "完了条件",
+          "連携"
+        ],
+        "isEquipment": false,
+        "sourceFile": ".claude/agents/cutter.md",
+        "seat": [
+          3.3,
+          6.6
+        ],
+        "team": "claude",
+        "furniture": "desk",
+        "accent": "#0e7490",
+        "accentLight": "#3fc0dd",
         "hair": "#3a3f4a",
         "runtime": "Claude Code"
       },
@@ -136,10 +195,10 @@
         "isEquipment": false,
         "sourceFile": ".claude/agents/design.md",
         "seat": [
-          0.4,
-          6.2
+          7.2,
+          3.4
         ],
-        "team": "production",
+        "team": "codex",
         "furniture": "desk",
         "accent": "#5b3fb5",
         "accentLight": "#a689f0",
@@ -180,12 +239,76 @@
         "sourceFile": ".claude/agents/director.md",
         "seat": [
           0.4,
-          3.2
+          3.4
         ],
-        "team": "production",
+        "team": "claude",
         "furniture": "desk",
         "accent": "#8f2f28",
         "accentLight": "#e06b60",
+        "hair": "#3a3f4a",
+        "runtime": "Claude Code"
+      },
+      {
+        "id": "mixer",
+        "label": "音響エージェント",
+        "title": "音響エージェント（制作部門 Codex チーム）",
+        "description": "音響エージェント。工程9（SE・BGM・音声処理）を担う。SEは演出テロップ・画像挿入・画角変化とセットで付け、同じSEを連続で使わない。音量はSEトラック-20.0dB、BGMトラック-29.0dB、演者音声-6.0dB（すべてハードリミッター最大振幅）。BGMは最後に入れる。SEの選定やBGMの温度感はニュアンス判断のためCodex側で行う。SE付けの箇所出し、音量設定の確認、BGM挿入の段取りに使う。",
+        "tools": [
+          "Read",
+          "Grep",
+          "Glob"
+        ],
+        "model": "sonnet",
+        "sections": [
+          "なぜこの役割が要るか",
+          "何をするか",
+          "判断の基準（共通マニュアルより）",
+          "やってはいけないこと",
+          "完了条件",
+          "連携"
+        ],
+        "isEquipment": false,
+        "sourceFile": ".claude/agents/mixer.md",
+        "seat": [
+          7.2,
+          6.6
+        ],
+        "team": "codex",
+        "furniture": "desk",
+        "accent": "#a1275d",
+        "accentLight": "#e871ac",
+        "hair": "#3a3f4a",
+        "runtime": "Codex"
+      },
+      {
+        "id": "observer",
+        "label": "リアルタイム監査",
+        "title": "リアルタイム監査（監査室）",
+        "description": "リアルタイム監査。人が手動で編集している箇所を観察し、どのレベルの完成度を求めているのかを記録する。数値化できる判断は数値基準と照合し、数値化できない判断は「ニュアンスメモ」として残す。修正指示（工程12）を蓄積して自動化パラメータの候補を提案する。提案はするが、ルールとして確定はしない。編集の意図を知りたいとき、修正の傾向を知りたいとき、自動化の次の一手を決めるときに使う。",
+        "tools": [
+          "Read",
+          "Grep",
+          "Glob"
+        ],
+        "model": "sonnet",
+        "sections": [
+          "なぜこの役割が要るか",
+          "監視できるもの（現在）",
+          "何をするか",
+          "やってはいけないこと",
+          "完了条件",
+          "連携"
+        ],
+        "isEquipment": false,
+        "sourceFile": ".claude/agents/observer.md",
+        "seat": [
+          3.5,
+          0.1
+        ],
+        "team": "audit",
+        "furniture": "desk",
+        "accent": "#46586e",
+        "accentLight": "#8ba0bd",
         "hair": "#3a3f4a",
         "runtime": "Claude Code"
       },
@@ -218,13 +341,46 @@
         "isEquipment": false,
         "sourceFile": ".claude/agents/project-manual.md",
         "seat": [
-          6.2,
-          3.2
+          0.4,
+          6.6
         ],
-        "team": "production",
+        "team": "claude",
         "furniture": "desk",
         "accent": "#8a5a00",
         "accentLight": "#e0a02a",
+        "hair": "#3a3f4a",
+        "runtime": "Claude Code"
+      },
+      {
+        "id": "recruiter",
+        "label": "人材派遣",
+        "title": "人材派遣（監査室付き）",
+        "description": "人材派遣。制作部門のエージェントたちから「どんな人手が足りないか」を聞き取り、必要な人材のペルソナ（役割名・description・tools・model・完了条件・やってはいけないこと）を起草する。起草はドラフトとして提出し、CTOの承認後に正式配属する。新しい工程を自動化したいとき、既存の役割で回らない作業が見つかったとき、observerが人手不足の傾向を報告したときに使う。",
+        "tools": [
+          "Read",
+          "Grep",
+          "Glob",
+          "Write"
+        ],
+        "model": "opus",
+        "sections": [
+          "なぜこの役割が要るか",
+          "何をするか",
+          "配属の手順（承認後）",
+          "やってはいけないこと",
+          "完了条件",
+          "連携"
+        ],
+        "isEquipment": false,
+        "sourceFile": ".claude/agents/recruiter.md",
+        "seat": [
+          6.5,
+          0.1
+        ],
+        "team": "audit",
+        "furniture": "desk",
+        "accent": "#7c4a21",
+        "accentLight": "#c98a4b",
         "hair": "#3a3f4a",
         "runtime": "Claude Code"
       },
@@ -251,10 +407,10 @@
         "isEquipment": false,
         "sourceFile": ".claude/agents/telop.md",
         "seat": [
-          3.3,
-          6.2
+          10.1,
+          3.4
         ],
-        "team": "production",
+        "team": "codex",
         "furniture": "desk",
         "accent": "#0f7b3e",
         "accentLight": "#3fc47c",
@@ -272,10 +428,10 @@
         "sourceFile": "agents/mcp-server.mjs",
         "sections": [],
         "seat": [
-          6.2,
-          6.2
+          0.5,
+          0.1
         ],
-        "team": "production",
+        "team": "infra",
         "furniture": "rack",
         "accent": "#9aa4b2",
         "accentLight": "#6b7480",

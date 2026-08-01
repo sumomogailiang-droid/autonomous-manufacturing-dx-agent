@@ -1,16 +1,16 @@
 /*
  * office.js
  *
- * エージェントのオフィスを等角投影（アイソメトリック）で描く。
+ * ENGULF（エンガルフ）のオフィスを等角投影（アイソメトリック）で描く。
  *
  * === なぜ手描きのドット絵ではないのか ===
  *
  * agents/sprites.mjs のドット絵は正面向きの16x16で、ターミナル用に作られている。
- * 斜め見下ろしにするには7体すべてを角度つきで描き直す必要があり、
+ * 斜め見下ろしにするには全員を角度つきで描き直す必要があり、
  * しかも机・椅子・床との接地や陰影を1ピクセルずつ合わせることになる。
  *
  * そこで、箱（直方体）を計算で組み上げる方式にした。
- *   - 陰影が全部屋で自動的に揃う（上面・左面・右面の明度が常に同じ比率）
+ *   - 陰影が全席で自動的に揃う（上面・左面・右面の明度が常に同じ比率）
  *   - 席を足すとき座標を1行足すだけで済む
  *   - 拡大しても線がぼけない
  *
@@ -18,8 +18,7 @@
  *
  * 人の色（役割色）は office-data.js 経由で agents/sprites.mjs の PALETTE から来る。
  * ターミナルのドット絵とブラウザのオフィスで、同じ役割が同じ色になる。
- *
- * 家具・床・植木の色は役割と関係がないので、このファイルの SCENE で持つ。
+ * 家具・床・植木など役割と関係のない色は、このファイルの SCENE で持つ。
  *
  * === 等角投影の座標 ===
  *
@@ -29,11 +28,13 @@
  * 手前ほど (x + y) が大きい。描画順は (x + y) の昇順にして、
  * 手前のものを後から描く（画家のアルゴリズム）。
  *
- * === 吹き出しの位置 ===
+ * 投影は線形なので、grid(x,y) への移動は画面座標の平行移動と等しい。
+ * 歩行アニメーションはこれを使い、原点で作った立ち姿を translate で動かす。
  *
- * 吹き出しはSVGではなくHTMLで出す（文字の折り返しと可読性のため）。
- * このファイルは各エージェントの頭の位置をviewBox座標で返すので、
- * 呼び出し側がそれをパーセントに直して重ねる。
+ * === 壁の文字 ===
+ *
+ * 奥の壁の面は「グリッドx → 右下へ傾き0.5、高さz → 垂直」なので、
+ * matrix(1, 0.5, 0, 1) で文字を壁に貼り付けられる。社名サインに使う。
  *
  * このファイルはブラウザ・Node のどちらでも読める（依存なし）。
  */
@@ -59,8 +60,7 @@
   var SCENE = {
     floorA: '#e8ded0',
     floorB: '#e0d4c3',
-    floorOversight: '#d9ccb8',
-    rug: '#cbb9a0',
+    floorAudit: '#d9ccb8',
     wood: '#c1905c',
     woodDark: '#9a6f42',
     metal: '#8d8377',
@@ -76,7 +76,12 @@
     board: '#2c2f36',
     boardLine: '#6f7684',
     wall: '#f6f0e6',
-    wallDark: '#e8dfd0'
+    wallDark: '#e8dfd0',
+    sign: '#1f232b',
+    signText: '#f2ede2',
+    zoneClaude: '#1d4ed8',
+    zoneCodex: '#5b3fb5',
+    shadow: 'rgba(30, 24, 12, 0.13)'
   };
 
   /* ---------------------------------------------------------------- */
@@ -121,7 +126,7 @@
   }
 
   /* ---------------------------------------------------------------- */
-  /* 描画部品                                                           */
+  /* 基本部品                                                           */
   /* ---------------------------------------------------------------- */
 
   /**
@@ -152,6 +157,14 @@
       [project(x, y, 0), project(x + w, y, 0), project(x + w, y + d, 0), project(x, y + d, 0)],
       color, extra
     );
+  }
+
+  /** 接地影。楕円1つで机や人の浮きを消す。 */
+  function shadowAt(cx, cy, r) {
+    var c = project(cx, cy, 0);
+    return '<ellipse cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) +
+      '" rx="' + (r * TW * 0.5).toFixed(1) + '" ry="' + (r * TH * 0.5).toFixed(1) +
+      '" fill="' + SCENE.shadow + '"/>';
   }
 
   /* ---------------------------------------------------------------- */
@@ -198,6 +211,8 @@
   function deskUnit(bx, by, a) {
     var g = [];
 
+    g.push(shadowAt(bx + 1.25, by + 1.55, 1.05));
+
     /* 天板 */
     g.push(box(bx + 0.24, by + 0.94, 0.62, 1.80, 0.86, 0.08, SCENE.wood));
     /* 脚 */
@@ -225,6 +240,56 @@
     return g.join('');
   }
 
+  /**
+   * 立ち姿。歩行アニメーション用。
+   * グリッド原点(0,0)に立った状態で作り、呼び出し側が transform で動かす。
+   */
+  /*
+   * オーロラのグラデーション定義。
+   * Claude Code チーム = 黄金、Codex チーム = 海（青緑から深い青へ）。
+   * 中心を濃くせず輪郭側を光らせ、体を縁取る「枠」に見せる。
+   */
+  function auraDefs() {
+    return '<defs>' +
+      '<radialGradient id="aura-gold">' +
+        '<stop offset="0.45" stop-color="#ffd76a" stop-opacity="0"/>' +
+        '<stop offset="0.78" stop-color="#ffcf4d" stop-opacity="0.5"/>' +
+        '<stop offset="0.92" stop-color="#f5b31f" stop-opacity="0.75"/>' +
+        '<stop offset="1" stop-color="#e8a200" stop-opacity="0"/>' +
+      '</radialGradient>' +
+      '<radialGradient id="aura-ocean">' +
+        '<stop offset="0.45" stop-color="#5eead4" stop-opacity="0"/>' +
+        '<stop offset="0.74" stop-color="#38cfd9" stop-opacity="0.5"/>' +
+        '<stop offset="0.9" stop-color="#2e9fe6" stop-opacity="0.75"/>' +
+        '<stop offset="1" stop-color="#1d4ed8" stop-opacity="0"/>' +
+      '</radialGradient>' +
+    '</defs>';
+  }
+
+  function standingPerson(a, p) {
+    var g = [];
+    var auraKind = a.runtime === 'Claude Code' ? 'gold' : (a.runtime === 'Codex' ? 'ocean' : '');
+    if (auraKind) {
+      var ac = project(0.5, 0.5, 0.85);
+      g.push('<ellipse class="iso-aura" cx="' + ac.x.toFixed(1) + '" cy="' + ac.y.toFixed(1) +
+        '" rx="30" ry="42" fill="url(#aura-' + auraKind + ')"/>');
+    }
+    g.push(shadowAt(0.5, 0.55, 0.44));
+    /* 脚2本。歩行中はCSSで交互に振る。 */
+    g.push('<g class="iso-leg iso-leg-l">' + box(0.32, 0.4, 0, 0.17, 0.22, 0.44, SCENE.chairDark) + '</g>');
+    g.push('<g class="iso-leg iso-leg-r">' + box(0.56, 0.4, 0, 0.17, 0.22, 0.44, SCENE.chairDark) + '</g>');
+    /* 胴 */
+    g.push(box(0.24, 0.32, 0.42, 0.58, 0.4, 0.58, a.accent));
+    /* 腕 */
+    g.push(box(0.15, 0.38, 0.55, 0.1, 0.3, 0.38, a.accentLight));
+    g.push(box(0.83, 0.38, 0.55, 0.1, 0.3, 0.38, a.accentLight));
+    /* 頭 */
+    if (a.hair) g.push(box(0.26, 0.28, 1.0, 0.52, 0.09, 0.36, a.hair));
+    g.push(box(0.28, 0.32, 1.0, 0.46, 0.34, 0.38, p.skin));
+    if (a.hair) g.push(box(0.26, 0.3, 1.36, 0.5, 0.38, 0.08, a.hair));
+    return g.join('');
+  }
+
   /* ---------------------------------------------------------------- */
   /* 設備・装飾                                                         */
   /* ---------------------------------------------------------------- */
@@ -232,6 +297,7 @@
   /** MCPサーバーはラック。人ではないので椅子も机も置かない。 */
   function rack(bx, by, a) {
     var g = [];
+    g.push(shadowAt(bx + 1.25, by + 1.1, 0.95));
     g.push(box(bx + 0.62, by + 0.55, 0, 1.20, 0.95, 2.25, SCENE.metalDark));
     g.push('<g class="iso-tool">');
     for (var i = 0; i < 5; i++) {
@@ -243,7 +309,8 @@
 
   /** 観葉植物。角の余白を埋めて、部屋らしく見せる。 */
   function plant(x, y) {
-    return box(x, y, 0, 0.42, 0.42, 0.34, SCENE.plantPot) +
+    return shadowAt(x + 0.22, y + 0.24, 0.34) +
+      box(x, y, 0, 0.42, 0.42, 0.34, SCENE.plantPot) +
       box(x + 0.06, y + 0.06, 0.34, 0.30, 0.30, 0.44, SCENE.plant) +
       box(x + 0.01, y + 0.10, 0.56, 0.40, 0.22, 0.30, SCENE.plantDark) +
       box(x + 0.12, y - 0.02, 0.62, 0.22, 0.36, 0.34, SCENE.plant);
@@ -260,12 +327,65 @@
         (-2.25 * TZ).toFixed(1) + ')"');
   }
 
-  /** 奥の壁に掛かる案件ボード。文字はHTML側で出すので、ここでは行だけ示す。 */
-  function board(x, y) {
+  /**
+   * 奥の壁の進行ボード。
+   * 数字はすべて実データ（席数・工程数）から来る。飾りの数字を書かない。
+   */
+  function board(x, data) {
     var g = [];
-    g.push(box(x, y, 1.05, 3.4, 0.12, 1.25, SCENE.board));
-    for (var i = 0; i < 5; i++) {
-      g.push(box(x + 0.22, y - 0.01, 1.22 + i * 0.19, 1.4 + (i % 2) * 0.8, 0.02, 0.07, SCENE.boardLine));
+    g.push(box(x, -0.18, 1.05, 3.5, 0.12, 1.35, SCENE.board));
+    var o = project(x + 0.25, 0, 2.1);
+    g.push('<g transform="matrix(1,0.5,0,1,' + o.x.toFixed(1) + ',' + o.y.toFixed(1) + ')">');
+    g.push('<text class="iso-board-title" x="0" y="0">' + esc(data.company.project) + '</text>');
+    g.push('<text class="iso-board-line" x="0" y="12">高品質編集の完全自動化</text>');
+    g.push('<text class="iso-board-line" x="0" y="22">在籍' + data.agents.length +
+      '席・工程13</text>');
+    g.push('</g>');
+    return g.join('');
+  }
+
+  /** 社名サイン。奥の壁に貼る。 */
+  function signage(data) {
+    var o = project(0.7, 0, 2.35);
+    var g = [];
+    g.push('<g transform="matrix(1,0.5,0,1,' + o.x.toFixed(1) + ',' + o.y.toFixed(1) + ')">');
+    g.push('<text class="iso-sign-main" x="0" y="0">' + esc(data.company.name) + '</text>');
+    g.push('<text class="iso-sign-sub" x="1.5" y="15">AUTONOMOUS VIDEO STUDIO</text>');
+    g.push('</g>');
+    return g.join('');
+  }
+
+  /** 壁掛け時計。針は動かさない（時刻の嘘を表示しないため）。 */
+  function clock(x, z) {
+    var o = project(x, 0, z);
+    return '<g transform="matrix(1,0.5,0,1,' + o.x.toFixed(1) + ',' + o.y.toFixed(1) + ')">' +
+      '<circle cx="0" cy="0" r="7.5" fill="' + SCENE.signText + '" stroke="' + SCENE.lamp + '" stroke-width="1.6"/>' +
+      '<line x1="0" y1="0" x2="0" y2="-4.6" stroke="' + SCENE.lamp + '" stroke-width="1.3"/>' +
+      '<line x1="0" y1="0" x2="3.2" y2="1.4" stroke="' + SCENE.lamp + '" stroke-width="1.1"/>' +
+      '</g>';
+  }
+
+  /**
+   * ミーティングテーブル。チーム間の相談はここで起きる。
+   * 等角では床の円は横2:縦1の楕円になる。
+   */
+  function meetingTable(cx, cy) {
+    var g = [];
+    var r = 0.92;
+    var top = project(cx, cy, 0.6);
+    var side = project(cx, cy, 0.48);
+    g.push(shadowAt(cx, cy, r * 1.1));
+    g.push(box(cx - 0.08, cy - 0.08, 0, 0.16, 0.16, 0.5, SCENE.woodDark));
+    g.push('<ellipse cx="' + side.x.toFixed(1) + '" cy="' + side.y.toFixed(1) +
+      '" rx="' + (r * TW * 0.5).toFixed(1) + '" ry="' + (r * TH * 0.5).toFixed(1) +
+      '" fill="' + shade(SCENE.wood, 0.72) + '"/>');
+    g.push('<ellipse cx="' + top.x.toFixed(1) + '" cy="' + top.y.toFixed(1) +
+      '" rx="' + (r * TW * 0.5).toFixed(1) + '" ry="' + (r * TH * 0.5).toFixed(1) +
+      '" fill="' + shade(SCENE.wood, 1.02) + '"/>');
+    var stools = [[cx - 1.3, cy + 0.35], [cx + 0.6, cy - 1.05], [cx + 0.55, cy + 0.85]];
+    for (var i = 0; i < stools.length; i++) {
+      g.push(shadowAt(stools[i][0] + 0.22, stools[i][1] + 0.22, 0.3));
+      g.push(box(stools[i][0], stools[i][1], 0, 0.44, 0.44, 0.42, SCENE.chair));
     }
     return g.join('');
   }
@@ -278,8 +398,10 @@
    * オフィス全体を描く。
    *
    * @param {object} data office-data.js の中身
-   * @returns {{svg: string, anchors: object, viewBox: object}}
-   *          anchors は各エージェントの頭上の位置（viewBox座標）。吹き出しの基準に使う。
+   * @returns {{svg, anchors, viewBox, meeting, zoneLabels}}
+   *   anchors    各エージェントの頭上の位置（viewBox座標）。吹き出しの基準。
+   *   meeting    ミーティングテーブルの位置（grid と viewBox座標）
+   *   zoneLabels 部門ラベルを置く位置（viewBox座標）
    */
   function render(data) {
     var p = data.palette;
@@ -288,27 +410,38 @@
     var parts = [];
     var x, y, i;
 
-    /* --- 奥の壁 ---------------------------------------------------- */
+    /* --- 奥の壁・サイン・ボード・時計 ------------------------------ */
     parts.push(box(0, -0.30, 0, W, 0.30, 2.9, SCENE.wall));
     parts.push(box(-0.30, 0, 0, 0.30, D, 2.9, SCENE.wallDark));
-    parts.push(board(2.6, -0.2));
+    parts.push(signage(data));
+    parts.push(clock(6.1, 2.2));
+    parts.push(board(7.3, data));
 
     /* --- 床 -------------------------------------------------------- */
     parts.push('<g class="iso-floor">');
     for (y = 0; y < D; y++) {
       for (x = 0; x < W; x++) {
-        var oversight = y < 2.5;
-        var base = oversight ? SCENE.floorOversight : ((x + y) % 2 === 0 ? SCENE.floorA : SCENE.floorB);
-        parts.push(tile(x, y, 1, 1, base));
+        var audit = y < 2.7;
+        var base = audit ? SCENE.floorAudit : ((x + y) % 2 === 0 ? SCENE.floorA : SCENE.floorB);
+        parts.push(tile(x, y, Math.min(1, W - x), Math.min(1, D - y), base));
       }
     }
     parts.push('</g>');
 
-    /* 制作フロアの敷物。CTO席との境目を床で示す。 */
-    parts.push(tile(0.2, 2.7, W - 0.4, D - 3.0, SCENE.rug, 'opacity="0.5"'));
+    /* --- 部門ゾーン。制作部門を2チームに分ける ---------------------- */
+    parts.push(tile(0.15, 3.0, 6.1, D - 3.2, SCENE.zoneClaude, 'opacity="0.06"'));
+    parts.push(tile(6.75, 3.0, W - 6.95, D - 3.2, SCENE.zoneCodex, 'opacity="0.06"'));
+
+    /* 監査室との境界と、チーム間の通路 */
+    var a1 = project(0, 2.85, 0), a2 = project(W, 2.85, 0);
+    parts.push('<line x1="' + a1.x.toFixed(1) + '" y1="' + a1.y.toFixed(1) +
+      '" x2="' + a2.x.toFixed(1) + '" y2="' + a2.y.toFixed(1) + '" class="iso-divider"/>');
+    var b1 = project(6.55, 3.0, 0), b2 = project(6.55, D, 0);
+    parts.push('<line x1="' + b1.x.toFixed(1) + '" y1="' + b1.y.toFixed(1) +
+      '" x2="' + b2.x.toFixed(1) + '" y2="' + b2.y.toFixed(1) + '" class="iso-divider"/>');
 
     /* --- 天井の照明 ------------------------------------------------ */
-    for (i = 0; i < 3; i++) parts.push(lamp(1.2 + i * 3.0, 4.2));
+    for (i = 0; i < 4; i++) parts.push(lamp(1.4 + i * 3.1, 4.4));
 
     /* --- 席（奥から手前へ） ---------------------------------------- */
     var seated = data.agents.slice().sort(function (a, b) {
@@ -327,28 +460,47 @@
         body = rack(bx, by, a);
         anchors[a.id] = project(bx + 1.2, by + 1.0, 2.5);
       } else if (a.furniture === 'platform') {
-        /* CTOは一段高い台に座る。制作チームの外から見ていることを高さで示す。 */
+        /* CTOは一段高い台に座る。制作部門の外から見ていることを高さで示す。 */
         body = box(bx + 0.05, by + 0.05, 0, 2.65, 2.45, 0.34, SCENE.metalDark) +
           '<g transform="translate(0,' + (-0.34 * TZ).toFixed(1) + ')">' +
           person(bx, by, a, p) + deskUnit(bx, by, a) + '</g>';
-        anchors[a.id] = project(bx + 1.0, by + 0.5, 2.05);
+        anchors[a.id] = project(bx + 1.0, by + 0.5, 2.1);
       } else {
         body = person(bx, by, a, p) + deskUnit(bx, by, a);
-        anchors[a.id] = project(bx + 1.0, by + 0.5, 1.7);
+        anchors[a.id] = project(bx + 1.0, by + 0.5, 1.75);
       }
 
       /* 足元の敷き板。稼働中に光らせる。 */
       var glow = tile(bx + 0.05, by + 0.05, 2.6, 2.4, a.accent, 'class="iso-glow"');
 
+      /* オーロラ。実行環境で色が決まる。
+         Claude Code = 黄金、Codex = 海。人の後ろに置き、体の枠のように見せる。 */
+      var aura = '';
+      var auraKind = a.runtime === 'Claude Code' ? 'gold' : (a.runtime === 'Codex' ? 'ocean' : '');
+      if (auraKind && a.furniture !== 'rack') {
+        var ac = project(bx + 1.02, by + 0.52, a.furniture === 'platform' ? 1.35 : 1.0);
+        aura = '<ellipse class="iso-aura" cx="' + ac.x.toFixed(1) + '" cy="' + ac.y.toFixed(1) +
+          '" rx="34" ry="46" fill="url(#aura-' + auraKind + ')"/>';
+      }
+
       parts.push(
-        '<g class="iso-agent" data-agent="' + a.id + '" tabindex="0" role="button" ' +
-        'aria-label="' + esc(a.label) + 'の席を開く">' + glow + body + '</g>'
+        '<g class="iso-agent" data-agent="' + a.id + '" data-aura="' + auraKind + '" ' +
+        'tabindex="0" role="button" ' +
+        'aria-label="' + esc(a.label) + 'の席を開く">' + glow + aura + body + '</g>'
       );
     }
 
-    /* --- 植木（手前の角） ------------------------------------------ */
+    /* --- ミーティングテーブル（Codexブロックの手前） ---------------- */
+    var meetGrid = [10.9, 7.3];
+    parts.push(meetingTable(meetGrid[0], meetGrid[1]));
+
+    /* --- 植木 ------------------------------------------------------ */
     parts.push(plant(-0.05, D - 0.9));
-    parts.push(plant(W - 0.5, 0.15));
+    parts.push(plant(W - 0.55, 2.95));
+    parts.push(plant(6.7, 2.95));
+
+    /* --- 歩行者レイヤー。会話シーンのとき panel が中へ描く ---------- */
+    parts.push('<g class="iso-walkers" id="iso-walkers"></g>');
 
     /* --- 表示範囲 -------------------------------------------------- */
     var corners = [project(0, 0, 0), project(W, 0, 0), project(0, D, 0), project(W, D, 0)];
@@ -356,7 +508,7 @@
     var ys = corners.map(function (c) { return c.y; });
     var minX = Math.min.apply(null, xs) - 30;
     var maxX = Math.max.apply(null, xs) + 30;
-    var minY = Math.min.apply(null, ys) - 3.7 * TZ;
+    var minY = Math.min.apply(null, ys) - 3.9 * TZ;
     var maxY = Math.max.apply(null, ys) + 26;
 
     var vb = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
@@ -364,9 +516,15 @@
     return {
       viewBox: vb,
       anchors: anchors,
+      meeting: { grid: meetGrid, screen: project(meetGrid[0], meetGrid[1], 1.3) },
+      zoneLabels: {
+        claude: project(2.2, 3.35, 0),
+        codex: project(9.0, 3.35, 0),
+        audit: project(1.9, 0.4, 0)
+      },
       svg: '<svg class="iso-svg" viewBox="' + vb.x.toFixed(1) + ' ' + vb.y.toFixed(1) + ' ' +
         vb.w.toFixed(1) + ' ' + vb.h.toFixed(1) +
-        '" role="img" aria-label="エージェントのオフィス見取り図">' + parts.join('') + '</svg>'
+        '" role="img" aria-label="ENGULFのオフィス見取り図">' + auraDefs() + parts.join('') + '</svg>'
     };
   }
 
@@ -380,6 +538,7 @@
     project: project,
     shade: shade,
     box: box,
+    standingPerson: standingPerson,
     SCENE: SCENE,
     TW: TW, TH: TH, TZ: TZ
   };
