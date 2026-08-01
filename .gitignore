@@ -11,3 +11,7 @@ node_modules/
 
 # ダッシュボード出力（生成物）
 agents/dashboard.html
+
+# 配布用の1ファイルHTML（生成物）
+# node tools/build-webapp.mjs で作り直せる
+dist/

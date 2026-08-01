@@ -185,6 +185,10 @@ node agents/dashboard.mjs --audit               # ドット絵で構成と監査
 
 # ブラウザでオフィスを見る
 # video-manual-visualizer/index.html を開き、タブ「⑬ オフィス」
+
+# 配布用に1ファイルへまとめる（外部通信なし。開けばそのまま動く）
+node tools/build-webapp.mjs                     # → dist/index.html
+node tools/build-webapp.mjs --fragment out.html # 外枠を自前で持つホスティング向け
 ```
 
 **リリース前は必ず `node agents/governance.mjs` を実行してください。**
