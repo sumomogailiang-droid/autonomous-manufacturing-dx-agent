@@ -77,19 +77,45 @@ function banner(agent, title, detail) {
  * 文字起こしの読み込み
  * ------------------------------------------------------------------ */
 
+/*
+ * 話者ラベルの取り出し。
+ *
+ * 文字起こしに話者が入っていれば、工程7（演者ごとのテロップ色分け）を
+ * 映像を見ずに埋められる。入っていなければ従来どおり空欄になる。
+ *
+ * 受け付ける書き方（どれでも可）:
+ *   あおさん: 本文
+ *   あおさん：本文        （全角コロン）
+ *   [あおさん] 本文
+ *   【あおさん】本文
+ *
+ * ラベルは本文から取り除く。残すとテロップに話者名が焼き込まれてしまう。
+ */
+function parseSpeaker(text) {
+  var m = text.match(/^\s*[\[【]\s*([^\]】\n]{1,20})\s*[\]】]\s*(.*)$/);
+  if (m) return { speaker: m[1].trim(), text: m[2].trim() };
+  /* コロン形式。時刻（12:34）を話者と誤認しないよう、数字だけの名前は除く。 */
+  m = text.match(/^\s*([^\s:：]{1,20})\s*[:：]\s*(.+)$/);
+  if (m && !/^[\d.:;]+$/.test(m[1])) return { speaker: m[1].trim(), text: m[2].trim() };
+  return { speaker: '', text: text };
+}
+
 function loadCues(path, rate) {
   const parsed = telop.parseSubtitles(readFileSync(path, 'utf8'));
   if (!parsed.length) throw new Error('字幕を読み取れませんでした: ' + path);
   return parsed.map((c, i) => {
     const startSec = telop.tcToSeconds(c.start);
     const endSec = telop.tcToSeconds(c.end);
-    const text = String(c.text || '').replace(/\s*\n\s*/g, ' ').trim();
+    const raw = String(c.text || '').replace(/\s*\n\s*/g, ' ').trim();
+    const sp = parseSpeaker(raw);
     return {
       no: i + 1,
       inFrame: tc.secondsToFrames(startSec, rate),
       outFrame: tc.secondsToFrames(endSec, rate),
-      startSec, endSec, text,
-      chars: [...text].length
+      startSec, endSec,
+      speaker: sp.speaker,
+      text: sp.text,
+      chars: [...sp.text].length
     };
   });
 }
@@ -230,11 +256,48 @@ function writeTelopMd(path, rows, rate) {
   L.push('> 文章は書き換えていません。整えたのは改行位置と表記だけです。');
   L.push('> IN/OUTはフレーム確定済み。重なりはレイヤーで上のトラックへ逃がします。');
   L.push('');
-  L.push('| # | IN | OUT | L | 本文 |');
-  L.push('|---|---|---|---|---|');
+  L.push('| # | IN | OUT | L | 演者 | 本文 |');
+  L.push('|---|---|---|---|---|---|');
   for (const r of rows) {
-    L.push(`| ${r.no} | ${r.inTc} | ${r.outTc} | V${(r.layer || 0) + 1} | ${r.lines.join(' ⏎ ').replace(/\|/g, '\\|')} |`);
+    L.push(`| ${r.no} | ${r.inTc} | ${r.outTc} | V${(r.layer || 0) + 1} | ${r.speaker || ''} | ${r.lines.join(' ⏎ ').replace(/\|/g, '\\|')} |`);
   }
+  writeFileSync(path, L.join('\n'), 'utf8');
+}
+
+/** 話者ごとの発話数・初出。工程7の色割当の入力になる。 */
+function speakerStats(cues, rate) {
+  const map = new Map();
+  for (const c of cues) {
+    const k = c.speaker || '(未ラベル)';
+    if (!map.has(k)) map.set(k, { name: k, lines: 0, firstFrame: c.inFrame, frames: 0 });
+    const e = map.get(k);
+    e.lines++;
+    e.frames += Math.max(0, c.outFrame - c.inFrame);
+  }
+  return [...map.values()].sort((a, b) => b.lines - a.lines);
+}
+
+function writeSpeakersMd(path, stats, rate, labelled, total) {
+  const L = ['# 演者と色の割当（工程7）', ''];
+  if (!labelled) {
+    L.push('> 文字起こしに話者ラベルがありません。');
+    L.push('> 本文だけで話者を決めるのは推測になり、工程7のよくある失敗');
+    L.push('> 「演者ごとのテロップ色切り替えを間違える」に直結します。');
+    L.push('> 映像を見て埋めるか、話者つきで文字起こしをやり直してください。');
+    L.push('');
+  } else {
+    L.push(`> 話者ラベルつき: ${labelled} / ${total}行（${Math.round(labelled / total * 100)}%）`);
+    L.push('> 色はチャンネルテンプレートの中から選びます（トンマナ外のデザインは使用禁止）。');
+    L.push('> 決めるのは冒頭担当者で、演者名・テロップ色・ラベル色を編集者とディレクターへ共有します。');
+    L.push('');
+  }
+  L.push('| 演者 | 発話数 | 初出 | 発話尺 | テロップ色 | ラベル色 |');
+  L.push('|---|---:|---|---:|---|---|');
+  for (const s of stats) {
+    L.push(`| ${s.name} | ${s.lines} | ${fTC(s.firstFrame, rate)} | ${(s.frames / rate.exact).toFixed(1)}秒 |  |  |`);
+  }
+  L.push('');
+  L.push('「テロップ色」「ラベル色」の欄を埋めたら、そのまま事前共有に使えます。');
   writeFileSync(path, L.join('\n'), 'utf8');
 }
 
@@ -333,11 +396,14 @@ function cmdProduce(srtPath, inTC, outTC, outDir, baselinePath, rate) {
     { rate: rate }
   );
   const items = (snapped.items || snapped.out || snapped).map ? (snapped.items || snapped.out || snapped) : snapped;
+  /* 整形で1キューが複数行に割れるので、元キュー番号から話者を引き直す */
+  const speakerBySource = new Map(cues.map((c, i) => [i + 1, c.speaker]));
   const rows = (Array.isArray(items) ? items : []).map((r) => ({
     no: r.index,
     inTc: fTC(r.inFrame, rate),
     outTc: fTC(r.outFrame, rate),
     layer: r.layer || 0,
+    speaker: speakerBySource.get(r.sourceIndex) || '',
     lines: [r.text]
   }));
   const telopPath = join(outDir, 'telop-plan.md');
@@ -368,6 +434,18 @@ function cmdProduce(srtPath, inTC, outTC, outDir, baselinePath, rate) {
   writeFileSync(notationPath, NL.join('\n'), 'utf8');
   console.log(`\n  指摘 ${(found || []).length}件${notes.length ? '（例: ' + notes.join(' / ') + '）' : ''}`);
   console.log(`  → ${notationPath}`);
+
+  /* --- 工程7: 演者ごとの色分け（telop + project-manual） ------------ */
+  const labelled = cues.filter((c) => c.speaker).length;
+  banner('project-manual', '工程7 演者と色の割当',
+    labelled ? `話者ラベル ${labelled}/${cues.length}行` : '話者ラベルなし');
+  const spStats = speakerStats(cues, rate);
+  const speakersPath = join(outDir, 'speakers.md');
+  writeSpeakersMd(speakersPath, spStats, rate, labelled, cues.length);
+  console.log('\n  ' + (labelled
+    ? `演者 ${spStats.length}名: ` + spStats.map((s) => `${s.name}(${s.lines})`).join(' / ')
+    : '話者ラベルがないため色分けできません（映像を見て確定してください）'));
+  console.log(`  → ${speakersPath}`);
 
   /* --- 基準比較（observer） ---------------------------------------- */
   banner('observer', '冒頭3分の基準値と比較', baselinePath ? basename(baselinePath) : '基準なし');
@@ -436,7 +514,6 @@ function secToSrt(s) {
 function main() {
   const args = process.argv.slice(2);
   const cmd = args.shift();
-  const rate = tc.resolveRate('29.97');
 
   const get = (flag, fallback) => {
     const i = args.indexOf(flag);
@@ -446,10 +523,16 @@ function main() {
     return v;
   };
 
+  const fpsArg = get('--fps', '29.97');
   const outDir = get('--dir', join(ROOT, 'segment-out'));
   const baseline = get('--baseline', join(outDir, 'baseline.json'));
   const inTC = get('--in', null);
   const outTC = get('--out', null);
+
+  /* フレームレートはシーケンス設定と必ず一致させる。
+     29.97 のフレーム番号は 00-29 までなので、それを超える値を含む
+     タイムコードを渡された場合は 59.94 などを疑うこと。 */
+  const rate = tc.resolveRate(fpsArg);
 
   if (cmd === 'analyze' && args[0]) {
     cmdAnalyze(args[0], outDir, rate);
@@ -458,7 +541,7 @@ function main() {
   } else {
     console.log('使い方:');
     console.log('  node tools/segment-kit.mjs analyze <srt> [--dir 出力先]');
-    console.log('  node tools/segment-kit.mjs produce <srt> --in 00;03;10;03 --out 00;06;10;52 [--dir 出力先] [--baseline baseline.json]');
+    console.log('  node tools/segment-kit.mjs produce <srt> --in 00;03;10;03 --out 00;06;10;29 [--dir 出力先] [--baseline baseline.json] [--fps 29.97]');
     process.exit(2);
   }
 }
