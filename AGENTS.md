@@ -221,6 +221,9 @@ node agents/generate-project-agent.mjs <案件マニュアルのパス> <案件I
 
 ### Codex CLI
 
+サインインと画像機能の使い分けを含む手順は **`agents/codex-setup.md`** にあります。
+アカウント情報・認証情報はリポジトリへ書かないでください。
+
 `~/.codex/config.toml` に追記（`agents/codex-config.toml` の内容をそのまま使えます）:
 
 ```toml

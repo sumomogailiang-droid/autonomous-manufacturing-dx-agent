@@ -673,6 +673,41 @@ record({
 });
 
 /* 生成物へURLが混入していないこと（URLの推測を禁止しているため） */
+/*
+ * 認証情報の混入。
+ *
+ * Codexチームのセットアップでアカウントを扱うが、
+ * メールアドレス・トークン・パスワードがリポジトリへ入ると共有範囲を超える。
+ * 手順書に「書かない」と記すだけでは、書かれたことに気づけない。
+ */
+const SECRET_PATTERNS = [
+  { name: 'メールアドレス', re: /[\w.+-]+@[\w-]+\.[\w.-]+/ },
+  { name: 'OpenAI形式のキー', re: /\bsk-[A-Za-z0-9_-]{16,}/ },
+  { name: 'Bearerトークン', re: /\bBearer\s+[A-Za-z0-9._-]{16,}/ },
+  { name: 'password/token の代入', re: /\b(?:password|passwd|api[_-]?key|secret)\s*[:=]\s*["'][^"']{6,}/i }
+];
+
+const secretHits = [];
+for (const f of [
+  'AGENTS.md', 'agents/README.md', 'agents/codex-setup.md', 'agents/codex-config.toml',
+  'agents/roadmap-frame-zero.md', 'video-manual-visualizer/office-data.js'
+]) {
+  const t = read(f);
+  if (!t) continue;
+  for (const p of SECRET_PATTERNS) {
+    const m = t.match(p.re);
+    if (m) secretHits.push(`${f}: ${p.name}`);
+  }
+}
+
+record({
+  id: 'C5-19', category: CAT5, severity: 'blocker',
+  name: '認証情報・アカウントが混入していない',
+  pass: secretHits.length === 0,
+  detail: secretHits.length ? secretHits.join(' / ') : '検査対象6ファイルに混入なし',
+  action: 'アカウント・鍵はリポジトリへ書かないでください。各自のローカル設定に置きます'
+});
+
 record({
   id: 'C5-18', category: CAT5, severity: 'blocker',
   name: 'オフィスデータにURLが混入していない',

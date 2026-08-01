@@ -15,3 +15,6 @@ agents/dashboard.html
 # 配布用の1ファイルHTML（生成物）
 # node tools/build-webapp.mjs で作り直せる
 dist/
+
+# 尺ごとの制作キット出力（クライアント素材の本文を含む）
+segment-out/
