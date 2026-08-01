@@ -12,7 +12,7 @@
   if (typeof module === 'object' && module.exports) { module.exports = data; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   return {
-  "generatedAt": "2026-07-30",
+  "generatedAt": "2026-08-01",
   "source": "video-manual-visualizer/manual-data.js",
   "note": "このファイルは tools/build-plugin-data.mjs が生成します。手で編集しないでください。",
   "ruleTypes": [
