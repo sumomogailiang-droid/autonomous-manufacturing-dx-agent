@@ -10,6 +10,9 @@ Codex CLI・Claude Code・その他のエージェントは、まずこれを読
 ```
 video-manual-visualizer/   マニュアルの図解ビジュアライザー（人が読む用）
   manual-data.js           ★ 唯一の情報源。すべてのデータはここが起点
+  office.js                エージェントのオフィスを等角投影で描く
+  office-panel.js          稼働状況・吹き出し・作業ログの組み立て
+  office-data.js           役割定義の写し（自動生成。手で編集しない）
 agents/
   build-knowledge.mjs      manual-data.js → 知識ベースMarkdownを生成
   knowledge/
@@ -168,6 +171,9 @@ Claude Codeは画像を作れませんが、「この場面は和やかだから
 node agents/build-knowledge.mjs
 node tools/build-plugin-data.mjs
 
+# オフィス画面のデータを生成（.claude/agents/*.md を編集したら必ず再実行）
+node tools/build-office-data.mjs
+
 # 検証
 node video-manual-visualizer/validate-data.js   # データ検証
 node agents/test-mcp.mjs                        # MCP疎通テスト
@@ -176,6 +182,9 @@ node agents/governance.mjs                      # CTOによる全体監査（GO 
 # 体制の確認・操作
 node agents/console.mjs                         # 対話コンソール（質問・指示ができる）
 node agents/dashboard.mjs --audit               # ドット絵で構成と監査結果を表示
+
+# ブラウザでオフィスを見る
+# video-manual-visualizer/index.html を開き、タブ「⑬ オフィス」
 ```
 
 **リリース前は必ず `node agents/governance.mjs` を実行してください。**

@@ -109,6 +109,32 @@ Claude Code や Codex とまったく同じツールを叩きます。答えが�
 
 絵の定義は `agents/sprites.mjs` の1箇所だけにあります（ダッシュボードとコンソールで共有）。
 
+## ブラウザで見る（オフィス）
+
+`video-manual-visualizer/index.html` のタブ「⑬ オフィス」で、
+エージェントの席を斜め見下ろし（等角投影）で表示します。
+
+```bash
+node tools/build-office-data.mjs   # 役割定義を編集したら再実行
+```
+
+ターミナルのドット絵と違い、こちらは人・机・椅子を箱の組み合わせで計算して描きます。
+役割の色は `agents/sprites.mjs` の `PALETTE` から来るので、ターミナルと同じ色になります。
+
+画面でできること:
+
+| | 内容 |
+|---|---|
+| 席をクリック | 役割定義（`.claude/agents/*.md` の内容）を表示 |
+| 作業ボタン | 実際にマニュアルデータを引き、担当エージェントの席が動く |
+| 在席一覧 | 待機中 / 作業中を文字でも表示（色だけに頼らない） |
+| 作業ログ | 誰が何をしたかを時系列で表示 |
+
+**ブラウザは stdio の MCP サーバーへ直接つながりません。**
+そのため、この画面が映すのは「このページ自身が行った作業」だけです。
+ターミナルで動いているエージェントの様子はここには出ません。
+できないことをできるように見せないため、擬似的なアニメーションは入れていません。
+
 ### 役割定義の共有
 
 役割定義は `.claude/agents/*.md` の1箇所だけにあります。
@@ -117,7 +143,8 @@ Claude Code や Codex とまったく同じツールを叩きます。答えが�
 .claude/agents/*.md   ← 唯一の定義元
    │
    ├─ Claude Code : サブエージェントとして直接読む
-   └─ Codex       : MCP の get_agent_role で受け取る
+   ├─ Codex       : MCP の get_agent_role で受け取る
+   └─ ブラウザ     : build-office-data.mjs が office-data.js を生成
 ```
 
 MCPサーバーはこのディレクトリを直接読むため、コピーは存在しません。
@@ -202,7 +229,7 @@ node agents/generate-project-agent.mjs <案件マニュアルのパス> <案件I
 node video-manual-visualizer/validate-data.js   # データ検証 181項目
 node agents/test-mcp.mjs                        # MCP疎通テスト 79項目
 node agents/test-console.mjs                    # コンソール検証 59項目
-node agents/governance.mjs                      # CTOによる全体監査 48項目（GO / NO-GO）
+node agents/governance.mjs                      # CTOによる全体監査 59項目（GO / NO-GO）
 
 # 詳細表示
 VERBOSE=1 node agents/test-mcp.mjs

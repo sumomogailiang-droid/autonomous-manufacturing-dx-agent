@@ -1291,6 +1291,41 @@
   }
 
   /* ================================================================ */
+  /* オフィス                                                           */
+  /* ================================================================ */
+
+  /*
+   * エージェントの席を等角で描く画面。
+   * 絵は office.js、組み立ては office-panel.js が持つ。
+   * 役割定義は .claude/agents/*.md が唯一の定義元で、
+   * tools/build-office-data.mjs が office-data.js を生成している。
+   */
+  function buildOffice() {
+    var host = document.getElementById('panel-office');
+    if (!host) return;
+
+    var missing = [];
+    if (typeof OFFICE_DATA === 'undefined') missing.push('office-data.js');
+    if (typeof IsoOffice === 'undefined') missing.push('office.js');
+    if (typeof OfficePanel === 'undefined') missing.push('office-panel.js');
+
+    /* 白い画面のまま原因が分からない状態を避ける。 */
+    if (missing.length) {
+      host.innerHTML = '<div class="notice notice-warn"><p>オフィス画面を表示できません。' +
+        '次のファイルが読み込まれていません：' + missing.join('、') + '</p>' +
+        '<p>office-data.js が無い場合は <code>node tools/build-office-data.mjs</code> を実行してください。</p></div>';
+      return;
+    }
+
+    try {
+      OfficePanel.build(host, OFFICE_DATA, DATA);
+    } catch (e) {
+      host.innerHTML = '<div class="notice notice-warn"><p>オフィス画面の組み立てに失敗しました：' +
+        String(e && e.message ? e.message : e) + '</p></div>';
+    }
+  }
+
+  /* ================================================================ */
   /* タブ制御                                                           */
   /* ================================================================ */
 
@@ -1306,7 +1341,8 @@
     { id: 'clips',      label: '切り抜き',         no: '⑨' },
     { id: 'growth',     label: 'ディレクターへ',   no: '⑩' },
     { id: 'stats',      label: '数字で見る',       no: '⑪' },
-    { id: 'glossary',   label: '用語集',           no: '⑫' }
+    { id: 'glossary',   label: '用語集',           no: '⑫' },
+    { id: 'office',     label: 'オフィス',         no: '⑬' }
   ];
 
   function selectTab(id) {
@@ -1373,6 +1409,7 @@
     buildGrowth();
     buildStats();
     buildGlossary();
+    buildOffice();
     selectTab('flow');
 
     var stamp = document.getElementById('data-stamp');

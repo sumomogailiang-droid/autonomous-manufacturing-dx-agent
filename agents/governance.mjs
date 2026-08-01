@@ -626,6 +626,62 @@ record({
 });
 
 /*
+ * ブラウザのオフィス画面。
+ *
+ * office-data.js は .claude/agents から生成した「写し」なので、
+ * 役割を足したのに再生成し忘れると、席のない役割が出て画面から消える。
+ * 生成物が古いことに気づけないのが一番まずいので、件数で検査する。
+ */
+const officeSrc = read('video-manual-visualizer/office-data.js');
+
+record({
+  id: 'C5-15', category: CAT5, severity: 'blocker',
+  name: 'オフィス画面のデータが生成済み',
+  pass: officeSrc.length > 0,
+  detail: officeSrc.length ? `${officeSrc.length} バイト` : 'office-data.js がありません',
+  action: 'node tools/build-office-data.mjs を実行してください'
+});
+
+let officeAgents = [];
+let officeParseError = '';
+if (officeSrc) {
+  try {
+    officeAgents = require(resolve(ROOT, 'video-manual-visualizer/office-data.js')).agents || [];
+  } catch (e) {
+    officeParseError = String(e && e.message ? e.message : e);
+  }
+}
+
+record({
+  id: 'C5-16', category: CAT5, severity: 'blocker',
+  name: 'オフィス画面のデータを読み取れる',
+  pass: officeSrc.length > 0 && !officeParseError,
+  detail: officeParseError || `${officeAgents.length}名`,
+  action: '読めないと画面が白いまま原因が分かりません。再生成してください'
+});
+
+/* 役割ファイル + MCPサーバー（設備）= 席の数。ずれていたら再生成が必要。 */
+const expectedSeats = roleFiles.length + 1;
+record({
+  id: 'C5-17', category: CAT5, severity: 'blocker',
+  name: 'オフィスの席が役割定義と一致している',
+  pass: officeAgents.length === expectedSeats,
+  detail: officeAgents.length === expectedSeats
+    ? `役割 ${roleFiles.length}件 + MCP = ${expectedSeats}席`
+    : `席 ${officeAgents.length} / 期待 ${expectedSeats}（役割 ${roleFiles.length}件 + MCP）`,
+  action: '役割を追加・削除したら node tools/build-office-data.mjs を再実行してください'
+});
+
+/* 生成物へURLが混入していないこと（URLの推測を禁止しているため） */
+record({
+  id: 'C5-18', category: CAT5, severity: 'blocker',
+  name: 'オフィスデータにURLが混入していない',
+  pass: !/https?:\/\//.test(officeSrc),
+  detail: /https?:\/\//.test(officeSrc) ? 'URLが含まれています' : '混入なし',
+  action: '原本で欠損しているURLがあります。推測で補わないでください'
+});
+
+/*
  * ターミナルの可視化と対話インターフェース。
  * ドット絵を二重に持っていないか、動作アニメーションがあるかを検査する。
  */
