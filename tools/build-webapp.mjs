@@ -26,6 +26,16 @@
  *
  *   node tools/build-webapp.mjs                    → dist/index.html
  *   node tools/build-webapp.mjs --fragment out.html
+ *   node tools/build-webapp.mjs --public           → 社外公開用（取引先名を伏せる）
+ *
+ * === --public について ===
+ *
+ * 社外へ共有するとき、取引先の実名が入っていると取引関係が外部へ出る。
+ * 一度公開すると取り消せない（キャッシュ・インデックスに残る）ため、
+ * 公開用ビルドでは取引先名を一般名へ置き換える。
+ *
+ * 置き換えたあとに個人情報のパターンを再検査し、残っていれば非ゼロ終了する。
+ * 「伏せたつもり」で出てしまう事故を、目視ではなく検査で止めるため。
  *
  * manual-data.js や役割定義を変えたら、先に生成物を作り直すこと。
  *   node agents/build-knowledge.mjs
@@ -67,6 +77,29 @@ function safeForInlineStyle(css) {
   return css.replace(/<\/(style)/gi, '<\\/$1');
 }
 
+/*
+ * 社外公開用の伏せ字。
+ * 取引先の実名を一般名へ置き換える。増えたらここへ足す。
+ */
+const REDACTIONS = [
+  { from: /株式会社ヒルウラ/g, to: 'クライアントA社' },
+  { from: /ヒルウラ/g, to: 'クライアントA' }
+];
+
+/* 公開してはいけないものの検査。伏せ字のあとに必ず走らせる。 */
+const PII_PATTERNS = [
+  { name: 'メールアドレス', re: /[\w.+-]+@[\w-]+\.[\w.-]{2,}/ },
+  { name: 'APIキー', re: /\bsk-[A-Za-z0-9_-]{16,}/ },
+  { name: 'Bearerトークン', re: /\bBearer\s+[A-Za-z0-9._-]{16,}/ },
+  { name: '18桁以上の数値ID', re: /\b\d{18,}\b/ }
+];
+
+function redact(text) {
+  let out = text;
+  for (const r of REDACTIONS) out = out.replace(r.from, r.to);
+  return out;
+}
+
 function build() {
   const html = read('index.html');
   const css = read('styles.css');
@@ -79,7 +112,7 @@ function build() {
   const body = bodyMatch[1].replace(/\s*<script\s+src="[^"]*"><\/script>/gi, '').trim();
 
   const titleMatch = html.match(/<title>([\s\S]*?)<\/title>/i);
-  const title = titleMatch ? titleMatch[1].trim() : '動画編集者 全体マニュアル ビジュアライザー';
+  const title = titleMatch ? titleMatch[1].trim() : 'ENGULF — AI社員のオフィス';
 
   const descMatch = html.match(/<meta\s+name="description"\s+content="([^"]*)"/i);
   const description = descMatch ? descMatch[1] : '';
@@ -142,11 +175,33 @@ function fullPage(b) {
 
 const args = process.argv.slice(2);
 const asFragment = args.includes('--fragment');
-const rest = args.filter((a) => a !== '--fragment');
+const isPublic = args.includes('--public');
+const rest = args.filter((a) => a !== '--fragment' && a !== '--public');
 const out = rest[0] || (asFragment ? join(ROOT, 'dist/office-app.html') : join(ROOT, 'dist/index.html'));
 
 const b = build();
-const text = asFragment ? fragment(b) : fullPage(b);
+let text = asFragment ? fragment(b) : fullPage(b);
+
+if (isPublic) {
+  text = redact(text);
+
+  /* 伏せ字が効いているか、他に漏れがないかを検査する。
+     出してから気づくのでは遅い（公開は取り消せない）。 */
+  const leaks = [];
+  for (const r of REDACTIONS) {
+    const m = text.match(r.from);
+    if (m) leaks.push(`伏せ字が残っています: ${m[0]}`);
+  }
+  for (const p of PII_PATTERNS) {
+    const m = text.match(p.re);
+    if (m) leaks.push(`${p.name}: ${m[0]}`);
+  }
+  if (leaks.length) {
+    console.error('公開用ビルドに出してはいけないものが含まれています:');
+    for (const l of leaks) console.error('  ' + l);
+    process.exit(1);
+  }
+}
 
 /* 出来上がりが外部へ通信していないことを確かめる。
    AGENTS.md でURLの推測を禁止しており、オフラインで動くことが前提のため。 */
@@ -162,6 +217,7 @@ writeFileSync(out, text, 'utf8');
 
 const kb = (n) => (n / 1024).toFixed(0) + 'KB';
 console.log(`形式        : ${asFragment ? '本文のみ（外枠なし）' : '完全なHTML'}`);
+console.log(`公開用      : ${isPublic ? 'はい（取引先名を伏せ、個人情報を検査済み）' : 'いいえ（社内用）'}`);
 console.log(`取り込み    : ${b.scripts.join(' → ')}`);
 console.log(`外部参照    : なし`);
 console.log(`出力        : ${out.replace(ROOT + '/', '')}  ${kb(Buffer.byteLength(text))}`);
