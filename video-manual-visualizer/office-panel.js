@@ -72,8 +72,14 @@
         id: 'conflicts', agent: 'project-manual', label: '未決定の確認',
         say: '案件側で上書きされているか見ます',
         work: function () {
-          var rows = (D.audit && D.audit.conflicts ? D.audit.conflicts : []).map(function (c) {
-            return (c.topic || c.title || '') + '：' + (c.summary || c.detail || '');
+          /* 両論（points）を1行ずつ出す。題名だけだと、どちらの記載かが分からず
+             「未決定を保持する」という判断ができなくなる。 */
+          var list = (D.audit && D.audit.conflicts) ? D.audit.conflicts : [];
+          var rows = [];
+          list.forEach(function (c) {
+            rows.push('■ ' + (c.title || c.id || ''));
+            (c.points || []).forEach(function (pt) { rows.push('　・' + pt); });
+            if (c.status) rows.push('　状態: ' + c.status);
           });
           return {
             headline: '未決定・矛盾 ' + rows.length + '件',
@@ -285,6 +291,15 @@
             '</div>' +
           '</div>' +
 
+          /* --- 出荷判定（生成時点のスナップショット） --- */
+          '<div class="office-verdict" id="office-verdict"></div>' +
+
+          /* --- 制作工程タイムライン --- */
+          '<section class="office-pipeline" aria-label="制作工程">' +
+            '<h3 class="office-h">制作工程 13</h3>' +
+            '<ol class="office-steps" id="office-steps"></ol>' +
+          '</section>' +
+
           '<div class="office-jobs" id="office-jobs" role="group" aria-label="実行できる作業"></div>' +
           '<div class="office-result" id="office-result" aria-live="polite"></div>' +
         '</div>' +
@@ -385,6 +400,96 @@
       });
       roster.appendChild(ul);
     });
+
+    /* --- 出荷判定（スナップショット。実行中の状態ではない） ----------- */
+    var verdictBox = host.querySelector('#office-verdict');
+    var snap = (typeof globalThis !== 'undefined' ? globalThis : window).AUDIT_SNAPSHOT;
+    if (snap) {
+      var when = String(snap.generatedAt || '').replace('T', ' ').replace(/\..*$/, ' UTC');
+      verdictBox.className = 'office-verdict is-' + (snap.verdict === 'GO' ? 'go' : 'nogo');
+      verdictBox.innerHTML =
+        '<div class="office-verdict-main">' +
+          '<span class="office-verdict-badge">' + esc(snap.verdict) + '</span>' +
+          '<span class="office-verdict-label">' +
+            (snap.verdict === 'GO' ? '出荷可' : '出荷不可') + '</span>' +
+        '</div>' +
+        '<div class="office-verdict-nums">' +
+          '検査 ' + snap.total + '件／合格 ' + snap.passed +
+          '／ブロッカー ' + snap.blockers + '／警告 ' + snap.warnings +
+        '</div>' +
+        ((snap.failing || []).length
+          ? '<ul class="office-verdict-fail">' + snap.failing.map(function (f) {
+              return '<li><span class="office-verdict-kind is-' + f.result.toLowerCase() + '">' +
+                esc(f.result) + '</span>' + esc(f.id) + '　' + esc(f.name) + '</li>';
+            }).join('') + '</ul>'
+          : '') +
+        '<p class="office-verdict-note"><strong>生成時点のスナップショット</strong>（' + esc(when) + '）。' +
+          '実行中の状態ではありません。最新の判定は <code>node agents/governance.mjs</code> で確認してください。</p>';
+    } else {
+      verdictBox.className = 'office-verdict is-missing';
+      verdictBox.innerHTML = '<p class="office-verdict-note">監査スナップショットがありません。' +
+        '<code>node tools/build-audit-snapshot.mjs</code> を実行してください。</p>';
+    }
+
+    /* --- 制作工程タイムライン ---------------------------------------- */
+    var stepsBox = host.querySelector('#office-steps');
+    (office.processes || []).forEach(function (pr) {
+      var ow = byId[pr.owner];
+      var li = document.createElement('li');
+      li.className = 'office-step' +
+        (pr.ruleType === 'conflict' ? ' is-conflict' : '') +
+        (pr.humanCheck ? ' is-human' : '');
+      li.innerHTML =
+        '<span class="office-step-no">' + pr.no + '</span>' +
+        '<span class="office-step-title">' + esc(pr.title) + '</span>' +
+        '<span class="office-step-owner">' +
+          '<span class="office-chip" style="background:' + esc(ow ? ow.accent : '#888') + '"></span>' +
+          esc(ow ? ow.label : pr.owner) +
+          (pr.support && pr.support.length
+            ? '<span class="office-step-support">＋' + pr.support.map(function (id) {
+                return esc(byId[id] ? byId[id].label : id);
+              }).join('・') + '</span>'
+            : '') +
+        '</span>' +
+        '<span class="office-step-flags">' +
+          (pr.humanCheck ? '<span class="office-flag is-human" title="' + esc(pr.checkWhy) + '">人が確認</span>' : '') +
+          (pr.ruleType === 'conflict' ? '<span class="office-flag is-conflict">未決定あり</span>' : '') +
+        '</span>' +
+        '<span class="office-step-done">' + esc(pr.summary) + '</span>';
+
+      li.addEventListener('click', function () { showProcess(pr); });
+      li.tabIndex = 0;
+      li.setAttribute('role', 'button');
+      li.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showProcess(pr); }
+      });
+      stepsBox.appendChild(li);
+    });
+
+    /* 工程の詳細。完了条件は manual-data.js の実データ。 */
+    function showProcess(pr) {
+      var ow = byId[pr.owner];
+      result.innerHTML =
+        '<div class="office-result-head">' +
+          '<span class="office-chip" style="background:' + esc(ow ? ow.accent : '#888') + '"></span>' +
+          '<strong>工程' + pr.no + '　' + esc(pr.title) + '</strong>' +
+          '<span class="office-result-title">担当：' + esc(ow ? ow.label : pr.owner) +
+            (pr.support && pr.support.length ? '／支援：' + pr.support.map(function (id) {
+              return esc(byId[id] ? byId[id].label : id); }).join('・') : '') + '</span>' +
+        '</div>' +
+        '<p class="office-role-desc">' + esc(pr.summary) + '</p>' +
+        (pr.done && pr.done.length
+          ? '<p class="office-plan-h">完了条件</p><ul class="office-result-rows">' +
+            pr.done.map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') + '</ul>'
+          : '') +
+        (pr.humanCheck
+          ? '<p class="office-result-note"><strong>人が確認する工程です。</strong>' + esc(pr.checkWhy) + '</p>'
+          : '') +
+        (pr.ruleType === 'conflict'
+          ? '<p class="office-result-note">この工程には未決定の矛盾が含まれます。' +
+            '勝手に統一せず、確定が要る箇所だけディレクターへ渡してください。</p>'
+          : '');
+    }
 
     /* --- 成果物モニター --------------------------------------------- */
     DELIVERABLES.forEach(function (d) {

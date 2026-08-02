@@ -200,6 +200,12 @@ node tools/build-plugin-data.mjs
 # オフィス画面のデータを生成（.claude/agents/*.md を編集したら必ず再実行）
 node tools/build-office-data.mjs
 
+# 出荷判定のスナップショットを生成（画面へGO/NO-GOを出す唯一の経路）
+node tools/build-audit-snapshot.mjs
+
+# 他のAIへ渡す引き継ぎ資料
+node tools/build-brief.mjs --public
+
 # 検証
 node video-manual-visualizer/validate-data.js   # データ検証
 node agents/test-mcp.mjs                        # MCP疎通テスト

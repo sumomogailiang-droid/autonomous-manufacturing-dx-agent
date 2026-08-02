@@ -13,7 +13,7 @@
   if (typeof module === 'object' && module.exports) { module.exports = data; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   return {
-    "generatedAt": "2026-08-01",
+    "generatedAt": "2026-08-02",
     "source": ".claude/agents/*.md + agents/sprites.mjs",
     "note": "このファイルは tools/build-office-data.mjs が生成します。手で編集しないでください。",
     "company": {
@@ -53,6 +53,227 @@
         ],
         "label": "他制作会社 窓口",
         "note": "未起動"
+      }
+    ],
+    "processes": [
+      {
+        "no": 1,
+        "title": "依頼・即レス",
+        "summary": "依頼が来たら、すぐに一次返信する。",
+        "ruleType": "official",
+        "done": [
+          "一次返信を送信済み。",
+          "回答時刻または初校共有予定時刻を、数字で伝えてある。"
+        ],
+        "owner": "sales-chat",
+        "support": [
+          "sales-hilura"
+        ],
+        "humanCheck": true,
+        "checkWhy": "クライアントへの実送信は人間の承認が要る"
+      },
+      {
+        "no": 2,
+        "title": "権限・素材・納期確認",
+        "summary": "素材の不備は、いちばん最初に見つける。",
+        "ruleType": "official",
+        "done": [
+          "素材確認の全項目をチェック済み。",
+          "不備があれば【素材不備の可能性の連絡】を送信済み。",
+          "不備がなければ「素材確認済みです」を送信済み。"
+        ],
+        "owner": "common-manual",
+        "support": [
+          "project-manual"
+        ],
+        "humanCheck": false,
+        "checkWhy": ""
+      },
+      {
+        "no": 3,
+        "title": "シーケンス・画角・音声設定",
+        "summary": "最初の設定を間違えると、大きな手戻りになる。",
+        "ruleType": "official",
+        "done": [
+          "シーケンス・通常画角が確定している。",
+          "演者・SE・BGMの各トラックへ規定の数値を設定済み。",
+          "色調補正を行う場合はディレクターへ連絡済み。"
+        ],
+        "owner": "mixer",
+        "support": [
+          "director"
+        ],
+        "humanCheck": true,
+        "checkWhy": "最適な画角はチャンネルごとに違う。色調補正はディレクターへ連絡が要る"
+      },
+      {
+        "no": 4,
+        "title": "粗カット",
+        "summary": "大きな不要部分だけを取り除く。自動ツールも必ず目視確認。",
+        "ruleType": "official",
+        "done": [
+          "素材をネスト済み。",
+          "大きな不要部分を除去済み。",
+          "自動ツール使用箇所を目視・試聴で確認済み。"
+        ],
+        "owner": "cutter",
+        "support": [],
+        "humanCheck": true,
+        "checkWhy": "自動ツールの出力も必ず目視確認する（工程4の明記事項）"
+      },
+      {
+        "no": 5,
+        "title": "細カット",
+        "summary": "イヤホンで音を聞きながら、子音のタイミングに合わせて整える。",
+        "ruleType": "official",
+        "done": [
+          "重複・言い直し・ケバの処理が完了。",
+          "子音の発声タイミングと合っている。",
+          "自然に聞こえる状態になっている。"
+        ],
+        "owner": "cutter",
+        "support": [
+          "observer"
+        ],
+        "humanCheck": true,
+        "checkWhy": "イヤホンで音を聞きながら子音のタイミングを整える"
+      },
+      {
+        "no": 6,
+        "title": "カット確認",
+        "summary": "カット完了時点で提出し、カット感覚のフィードバックをもらう。",
+        "ruleType": "official",
+        "done": [
+          "カット版をディレクターへ提出済み。",
+          "フィードバックを受領し、反映済み。"
+        ],
+        "owner": "director",
+        "support": [
+          "cutter"
+        ],
+        "humanCheck": true,
+        "checkWhy": "カット感覚のフィードバックを受けてから後工程へ進む"
+      },
+      {
+        "no": 7,
+        "title": "テロップ・表記統一",
+        "summary": "1行15〜18文字。句読点は使わず半角スペース。表記揺れはゼロにする。",
+        "ruleType": "official",
+        "done": [
+          "全テロップが1行15〜18文字の目安に収まっている。",
+          "表記揺れが1つもない。",
+          "固有名詞をすべて裏取り済み。",
+          "フォント崩れがない。"
+        ],
+        "owner": "telop",
+        "support": [
+          "common-manual",
+          "project-manual"
+        ],
+        "humanCheck": false,
+        "checkWhy": ""
+      },
+      {
+        "no": 8,
+        "title": "見出し・画像・図解・演出",
+        "summary": "演出は6秒に1回が基本基準。ただし提出前チェックは10秒に1回で、矛盾している。",
+        "ruleType": "conflict",
+        "done": [
+          "演出頻度の基準を満たしている（※6秒／10秒の矛盾はディレクター確認）。",
+          "装飾テロップがセーフマージン内かつ顔に被っていない。",
+          "サブ見出しだけで動画構成が分かる。"
+        ],
+        "owner": "design",
+        "support": [
+          "director"
+        ],
+        "humanCheck": true,
+        "checkWhy": "演出頻度が未決定。確定はディレクターの権限"
+      },
+      {
+        "no": 9,
+        "title": "SE・BGM・音声処理",
+        "summary": "SEは画角変化・デザインフォント・画像挿入に。BGMは最後に入れる。",
+        "ruleType": "official",
+        "done": [
+          "SEが規定の場所へ入っている。",
+          "BGM挿入とリミックスが完了している。",
+          "クリックノイズ対策が完了している。",
+          "イヤホンで音量を確認済み。"
+        ],
+        "owner": "mixer",
+        "support": [
+          "design"
+        ],
+        "humanCheck": false,
+        "checkWhy": ""
+      },
+      {
+        "no": 10,
+        "title": "提出前チェック",
+        "summary": "18項目のチェックリストと、誤字脱字チェックツールを必ず使う。",
+        "ruleType": "official",
+        "done": [
+          "チェックリスト18項目がすべてチェック済み。",
+          "誤字脱字チェックツールでエラーがゼロ。",
+          "FrameDetectorでフレームずれがゼロ。"
+        ],
+        "owner": "common-manual",
+        "support": [
+          "cto"
+        ],
+        "humanCheck": false,
+        "checkWhy": ""
+      },
+      {
+        "no": 11,
+        "title": "書き出し・提出",
+        "summary": "2026年4月23日更新でFrame.ioへ統一。ただし旧手順が残っており矛盾している。",
+        "ruleType": "conflict",
+        "done": [
+          "Frame.ioへアップロード済み。",
+          "ギガファイル便へプロマネとmp4をアップロード済み。",
+          "管理シートへ格納し、チェックリストを添付済み。"
+        ],
+        "owner": "director",
+        "support": [
+          "cto"
+        ],
+        "humanCheck": true,
+        "checkWhy": "提出方法が未決定。提出そのものも人間の承認が要る"
+      },
+      {
+        "no": 12,
+        "title": "修正・全体再チェック",
+        "summary": "修正は本来0を目指す。指示箇所以外も動画全体を再チェックする。",
+        "ruleType": "official",
+        "done": [
+          "修正指示へ返信済み。",
+          "全修正箇所を対応済み、かつ動画全体を再チェック済み。",
+          "進捗シートの動画・mp4・プロマネが最新版。"
+        ],
+        "owner": "observer",
+        "support": [
+          "director"
+        ],
+        "humanCheck": true,
+        "checkWhy": "指摘箇所以外も動画全体を再チェックする"
+      },
+      {
+        "no": 13,
+        "title": "保存・切り抜き・育成",
+        "summary": "プロマネと素材は1年間保存。切り抜きはクライアントOK後に制作。",
+        "ruleType": "official",
+        "done": [
+          "プロマネと素材を外部SSDへ保存済み。",
+          "切り抜きが最低3本、納品前チェックを通過している。"
+        ],
+        "owner": "project-manual",
+        "support": [
+          "observer"
+        ],
+        "humanCheck": false,
+        "checkWhy": ""
       }
     ],
     "palette": {

@@ -28,10 +28,12 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PALETTE } from '../agents/sprites.mjs';
 
+const require = createRequire(import.meta.url);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ROLES_DIR = join(ROOT, '.claude/agents');
 const OUT = join(ROOT, 'video-manual-visualizer/office-data.js');
@@ -86,6 +88,41 @@ const SEATS = {
 const VACANT = [
   { seat: [14.4, 8.4], label: '他制作会社 窓口', note: '未起動' }
 ];
+
+/*
+ * 工程 → 担当AI社員の割当。
+ *
+ * ここが唯一の定義元。役割定義の散文から機械的に拾うことはできない
+ * （design.md は「テロップが顔に重なっていないか｜工程7・工程8」と
+ *  参照として工程7に触れるが、工程7の担当は telop）。
+ *
+ * humanCheck は「人が必ず確認する」工程。すべて共通マニュアルの明記事項が根拠で、
+ * AIが決めてよい箇所と、決めてはいけない箇所を分けるために使う。
+ * 工程番号と担当名は生成時に実在チェックする（下の build 内）。
+ */
+const PROCESS_OWNERS = {
+  1:  { owner: 'sales-chat', support: ['sales-hilura'], humanCheck: true,
+        checkWhy: 'クライアントへの実送信は人間の承認が要る' },
+  2:  { owner: 'common-manual', support: ['project-manual'], humanCheck: false },
+  3:  { owner: 'mixer', support: ['director'], humanCheck: true,
+        checkWhy: '最適な画角はチャンネルごとに違う。色調補正はディレクターへ連絡が要る' },
+  4:  { owner: 'cutter', support: [], humanCheck: true,
+        checkWhy: '自動ツールの出力も必ず目視確認する（工程4の明記事項）' },
+  5:  { owner: 'cutter', support: ['observer'], humanCheck: true,
+        checkWhy: 'イヤホンで音を聞きながら子音のタイミングを整える' },
+  6:  { owner: 'director', support: ['cutter'], humanCheck: true,
+        checkWhy: 'カット感覚のフィードバックを受けてから後工程へ進む' },
+  7:  { owner: 'telop', support: ['common-manual', 'project-manual'], humanCheck: false },
+  8:  { owner: 'design', support: ['director'], humanCheck: true,
+        checkWhy: '演出頻度が未決定。確定はディレクターの権限' },
+  9:  { owner: 'mixer', support: ['design'], humanCheck: false },
+  10: { owner: 'common-manual', support: ['cto'], humanCheck: false },
+  11: { owner: 'director', support: ['cto'], humanCheck: true,
+        checkWhy: '提出方法が未決定。提出そのものも人間の承認が要る' },
+  12: { owner: 'observer', support: ['director'], humanCheck: true,
+        checkWhy: '指摘箇所以外も動画全体を再チェックする' },
+  13: { owner: 'project-manual', support: ['observer'], humanCheck: false }
+};
 
 /* 部門の表示名。在席一覧の見出しに使う。 */
 const TEAMS = {
@@ -197,6 +234,38 @@ function build() {
     a.runtime = RUNTIME[a.id] || '共通';
   }
 
+  /* 工程割当の実在チェック。工程番号と担当名が実在しないまま生成すると、
+     画面には出るが誰も担当していない工程が生まれる。 */
+  const manual = require(join(ROOT, 'video-manual-visualizer/manual-data.js'));
+  const processNos = new Set(manual.processes.map((p) => p.no));
+  const agentIds = new Set(agents.map((a) => a.id));
+  const processes = [];
+
+  for (const [noStr, v] of Object.entries(PROCESS_OWNERS)) {
+    const no = Number(noStr);
+    if (!processNos.has(no)) throw new Error(`存在しない工程へ担当を割り当てています: 工程${no}`);
+    if (!agentIds.has(v.owner)) throw new Error(`存在しない担当です: 工程${no} → ${v.owner}`);
+    for (const sp of v.support || []) {
+      if (!agentIds.has(sp)) throw new Error(`存在しない支援担当です: 工程${no} → ${sp}`);
+    }
+    const proc = manual.processes.find((p) => p.no === no);
+    processes.push({
+      no,
+      title: proc.title,
+      summary: proc.summary,
+      ruleType: proc.ruleType,
+      done: proc.done || [],
+      owner: v.owner,
+      support: v.support || [],
+      humanCheck: !!v.humanCheck,
+      checkWhy: v.checkWhy || ''
+    });
+  }
+  for (const no of processNos) {
+    if (!PROCESS_OWNERS[no]) throw new Error(`担当が未割当の工程があります: 工程${no}`);
+  }
+  processes.sort((a, b) => a.no - b.no);
+
   /* 席の重複は間取りが壊れるので生成時に落とす */
   const seen = new Set();
   for (const a of agents) {
@@ -218,6 +287,7 @@ function build() {
     },
     teams: TEAMS,
     vacant: VACANT,
+    processes,
     palette: {
       skin: PALETTE.s,
       hair: PALETTE.h,

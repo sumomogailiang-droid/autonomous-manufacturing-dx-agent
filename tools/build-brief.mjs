@@ -137,12 +137,21 @@ function build() {
   L.push('');
   L.push(`原本の中で ${conflicts.length}件 の矛盾が未解決のままです。**どちらかへ寄せてはいけません。**`);
   L.push('');
-  L.push('| 論点 | 内容 |');
-  L.push('|---|---|');
+  /*
+   * 両論（points）を必ず出す。ここが空だと、読んだAIは
+   * 「矛盾が5件ある」ことしか分からず、どちらの記載も知らないまま作業する。
+   * 未決定を保持するには、両方の記載そのものが渡っていなければならない。
+   */
   for (const c of conflicts) {
-    L.push(`| ${c.topic || c.title || ''} | ${(c.summary || c.detail || '').replace(/\|/g, '\\|')} |`);
+    L.push(`### ${c.title || c.id}`);
+    L.push('');
+    for (const pt of (c.points || [])) L.push(`- ${pt}`);
+    if (!(c.points || []).length) L.push('- （原本に併記された記載を読み取れませんでした）');
+    L.push('');
+    if (c.status) L.push(`**状態**: ${c.status}`);
+    if (c.action) L.push(`**対処**: ${c.action}`);
+    L.push('');
   }
-  L.push('');
   L.push('確定できるのはディレクター（演出頻度・提出方法）と経営者だけです。');
   L.push('**未決定が残っていること自体を、作業を止める理由にしないでください。**');
   L.push('両方を提示したまま進め、確定が要る箇所だけ担当へ渡します。');

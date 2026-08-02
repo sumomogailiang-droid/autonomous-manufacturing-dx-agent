@@ -725,6 +725,110 @@ for (const f of [
   }
 }
 
+/*
+ * 未決定の矛盾が「題名だけ」になっていないか。
+ *
+ * 矛盾データは title / points / status / action を持つ。
+ * 消費側が存在しないキー（summary など）を読むと、画面や引き継ぎ資料に
+ * 題名だけが並び、両論そのものが消える。
+ *
+ * 「矛盾が5件ある」としか分からない状態で渡されたAIは、両方の記載を
+ * 知らないまま作業するため、結果として未決定を保持できない。
+ * 消えたことに気づけないのが一番まずいので、両論の実文で検査する。
+ */
+const conflictData = safe(() => require(resolve(ROOT, 'video-manual-visualizer/manual-data.js')).audit.conflicts, []);
+const conflictPoints = conflictData.flatMap((c) => c.points || []);
+
+/*
+ * 併記件数は矛盾の性質で変わる。演出頻度は2件、提出方法は4件、
+ * 手順番号の重複は1件（両論ではなく単一の指摘）。
+ * 一律に2件以上を求めると、正しいデータを不合格にしてしまう。
+ * ここで守るべき契約は「中身と、決めずに渡す先が必ず添えてある」こと。
+ */
+const conflictIncomplete = conflictData.filter(
+  (c) => !(c.points || []).length || !c.status || !c.action
+);
+
+record({
+  id: 'C5-20', category: CAT5, severity: 'blocker',
+  name: '未決定の矛盾が中身と対処を保持している',
+  pass: conflictData.length > 0 && conflictIncomplete.length === 0,
+  detail: !conflictData.length ? '矛盾データを読めません'
+    : conflictIncomplete.length ? `不完全: ${conflictIncomplete.map((c) => c.title).join(', ')}`
+    : conflictData.map((c) => `${c.title}(${(c.points || []).length})`).join(' / '),
+  action: '各矛盾は記載本文・状態・対処を持つ必要があります。中身を削らないでください'
+});
+
+/* 消費側が両論を実際に出しているか。生成物の本文で確かめる。 */
+const briefOut = safe(() => {
+  execFileSync(process.execPath, [resolve(ROOT, 'tools/build-brief.mjs'), '/tmp/.governance-brief.md'],
+    { cwd: ROOT, stdio: 'pipe' });
+  return read('/tmp/.governance-brief.md') || readFileSync('/tmp/.governance-brief.md', 'utf8');
+}, '');
+
+const missingInBrief = conflictPoints.filter((pt) => briefOut && !briefOut.includes(pt));
+
+record({
+  id: 'C5-21', category: CAT5, severity: 'blocker',
+  name: '引き継ぎ資料へ両論が出力されている',
+  pass: briefOut.length > 0 && missingInBrief.length === 0,
+  detail: !briefOut.length ? '引き継ぎ資料を生成できません'
+    : missingInBrief.length ? `欠落 ${missingInBrief.length}件: ${missingInBrief[0]}`
+    : `${conflictPoints.length}件すべて出力`,
+  action: '消費側が存在しないキーを読んでいないか確認してください（title / points / status / action）'
+});
+
+/*
+ * 工程 → 担当の割当。
+ *
+ * 13工程すべてに担当がいないと、誰も手をつけない工程が生まれる。
+ * 割当は tools/build-office-data.mjs の PROCESS_OWNERS が唯一の定義元で、
+ * 生成時に工程番号と担当名の実在を検査している。ここでは生成物側で
+ * 抜けがないことを確かめる（生成し忘れも同時に検出できる）。
+ */
+const officeProcesses = safe(() => officeAgents.length
+  ? require(resolve(ROOT, 'video-manual-visualizer/office-data.js')).processes || []
+  : [], []);
+const manualProcessCount = safe(() =>
+  require(resolve(ROOT, 'video-manual-visualizer/manual-data.js')).processes.length, 0);
+const ownerIds = new Set(officeAgents.map((a) => a.id));
+const badOwners = officeProcesses.filter((p) => !ownerIds.has(p.owner));
+
+record({
+  id: 'C5-22', category: CAT5, severity: 'blocker',
+  name: '全工程に実在する担当が割り当たっている',
+  pass: manualProcessCount > 0 &&
+    officeProcesses.length === manualProcessCount && badOwners.length === 0,
+  detail: officeProcesses.length !== manualProcessCount
+    ? `工程 ${officeProcesses.length} / 期待 ${manualProcessCount}`
+    : badOwners.length ? `担当が実在しません: ${badOwners.map((p) => p.no + '→' + p.owner).join(', ')}`
+    : `${officeProcesses.length}工程すべて割当済み`,
+  action: 'tools/build-office-data.mjs の PROCESS_OWNERS を確認し、再生成してください'
+});
+
+/*
+ * 監査スナップショット。
+ *
+ * 画面へ GO / NO-GO を出す唯一の経路。無い・読めない状態で出荷すると、
+ * 出荷判定が画面のどこにも出ないまま配布される。
+ * 生成時刻を持たないスナップショットは「今の状態」に見えるので不合格にする。
+ */
+const snapSrc = read('video-manual-visualizer/audit-snapshot.js');
+let snapData = null;
+try {
+  snapData = snapSrc ? require(resolve(ROOT, 'video-manual-visualizer/audit-snapshot.js')) : null;
+} catch (e) { snapData = null; }
+
+record({
+  id: 'C5-23', category: CAT5, severity: 'blocker',
+  name: '監査スナップショットが生成時刻を持つ',
+  pass: !!(snapData && snapData.generatedAt && snapData.kind === 'snapshot' && snapData.verdict),
+  detail: !snapSrc ? 'audit-snapshot.js がありません'
+    : !snapData ? '読み取れません'
+    : `${snapData.verdict} / ${snapData.generatedAt}`,
+  action: 'node tools/build-audit-snapshot.mjs を実行してください。生成時刻がないと現在値に見えます'
+});
+
 record({
   id: 'C5-19', category: CAT5, severity: 'blocker',
   name: '認証情報・アカウントが混入していない',

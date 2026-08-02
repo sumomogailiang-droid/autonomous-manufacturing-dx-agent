@@ -54,6 +54,7 @@ const SRC = join(ROOT, 'video-manual-visualizer');
 const SCRIPTS = [
   'manual-data.js',
   'office-data.js',
+  'audit-snapshot.js',
   'office.js',
   'office-ambient.js',
   'office-panel.js',
