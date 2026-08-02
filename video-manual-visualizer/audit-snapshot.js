@@ -10,7 +10,7 @@
   if (typeof module === 'object' && module.exports) { module.exports = data; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   return {
-    "generatedAt": "2026-08-02T04:33:55.524Z",
+    "generatedAt": "2026-08-02T04:54:32.697Z",
     "kind": "snapshot",
     "note": "これは生成時点の監査結果です。実行中の状態ではありません。最新の判定は node agents/governance.mjs で確認してください。",
     "source": "agents/governance.mjs",

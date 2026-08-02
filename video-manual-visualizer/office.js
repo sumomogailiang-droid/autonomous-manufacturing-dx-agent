@@ -136,6 +136,58 @@
    * 直方体。手前から見える3面（上・左・右）だけを描く。
    * 裏側は見えないので描かない（要素数を減らすため）。
    */
+  /*
+   * グラデーションの登録簿。
+   *
+   * 面を単色で塗るとフラットに見える。面の中にも明暗をつけると立体になるが、
+   * 面ごとにグラデーションを作ると要素数が箱の数だけ増える。
+   *
+   * そこで「色 × 面の向き」の組み合わせでだけ作り、使い回す。
+   * 家具も人も色数は限られているので、実際には十数個で足りる。
+   * objectBoundingBox 指定なので、大きさの違う面へそのまま当てられる。
+   */
+  var gradRegistry = {};
+  var gradOrder = [];
+
+  function gradFor(color, face) {
+    var key = face + '_' + String(color).replace(/[^\w]/g, '');
+    if (gradRegistry[key]) return key;
+
+    var stops;
+    if (face === 'top') {
+      /* 上面。光源が左上なので、奥から手前へわずかに落ちる。 */
+      stops = [
+        [0, shade(color, 1.06)],
+        [0.55, shade(color, SHADE_TOP)],
+        [1, shade(color, 0.93)]
+      ];
+    } else if (face === 'left') {
+      /* 左面。下へ行くほど暗い（接地側のオクルージョン）。 */
+      stops = [
+        [0, shade(color, SHADE_LEFT * 1.14)],
+        [1, shade(color, SHADE_LEFT * 0.82)]
+      ];
+    } else {
+      /* 右面。光から遠いので落差を大きめに。 */
+      stops = [
+        [0, shade(color, SHADE_RIGHT * 1.2)],
+        [1, shade(color, SHADE_RIGHT * 0.78)]
+      ];
+    }
+
+    /* 上面は斜め、側面は垂直。等角では上面が菱形なので斜めのほうが自然。 */
+    var vec = face === 'top'
+      ? 'x1="0" y1="0" x2="1" y2="1"'
+      : 'x1="0" y1="0" x2="0" y2="1"';
+
+    gradRegistry[key] = '<linearGradient id="' + key + '" ' + vec + '>' +
+      stops.map(function (st) {
+        return '<stop offset="' + st[0] + '" stop-color="' + st[1] + '"/>';
+      }).join('') + '</linearGradient>';
+    gradOrder.push(key);
+    return key;
+  }
+
   function box(x, y, z, w, d, h, color, extra) {
     var top = [
       project(x, y, z + h), project(x + w, y, z + h),
@@ -149,9 +201,17 @@
       project(x + w, y, z + h), project(x + w, y + d, z + h),
       project(x + w, y + d, z), project(x + w, y, z)
     ];
-    return poly(left, shade(color, SHADE_LEFT), extra) +
-      poly(right, shade(color, SHADE_RIGHT), extra) +
-      poly(top, shade(color, SHADE_TOP), extra);
+
+    /* 上面と側面の境目に細い明線を置く。CGのリムライトにあたる部分で、
+       これがあると面の折れ目が立ち、箱の角がはっきりする。 */
+    var edge = '<polyline points="' + pts([top[3], top[0], top[1]]) +
+      '" fill="none" stroke="' + shade(color, 1.28) + '" stroke-width="0.9" ' +
+      'stroke-linejoin="round" opacity="0.55"/>';
+
+    return poly(left, 'url(#' + gradFor(color, 'left') + ')', extra) +
+      poly(right, 'url(#' + gradFor(color, 'right') + ')', extra) +
+      poly(top, 'url(#' + gradFor(color, 'top') + ')', extra) +
+      edge;
   }
 
   /** 床タイル1枚（高さのない菱形） */
@@ -162,12 +222,29 @@
     );
   }
 
+  /**
+   * 上面へ重ねる光沢。丸みのある物（頭・肩）にだけ使う。
+   *
+   * 等角の箱は面が3つとも平らなので、そのままだと折り紙に見える。
+   * 上面へ「左上が明るく、右下へ消える」薄い白を重ねると、
+   * 面が湾曲しているように読めて、CGのシェーディングに近づく。
+   * 家具すべてに掛けると全体が白っぽくなるので、人にだけ使う。
+   */
+  function glossTop(x, y, z, w, d, h) {
+    return poly([
+      project(x, y, z + h), project(x + w, y, z + h),
+      project(x + w, y + d, z + h), project(x, y + d, z + h)
+    ], 'url(#iso-gloss)');
+  }
+
   /** 接地影。楕円1つで机や人の浮きを消す。 */
   function shadowAt(cx, cy, r) {
+    /* 中心が濃く外へ向かって消える。輪郭のはっきりした楕円だと
+       貼り付けたように見えるので、放射グラデーションでぼかす。 */
     var c = project(cx, cy, 0);
     return '<ellipse cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) +
-      '" rx="' + (r * TW * 0.5).toFixed(1) + '" ry="' + (r * TH * 0.5).toFixed(1) +
-      '" fill="' + SCENE.shadow + '"/>';
+      '" rx="' + (r * TW * 0.62).toFixed(1) + '" ry="' + (r * TH * 0.62).toFixed(1) +
+      '" fill="url(#iso-contact)"/>';
   }
 
   /* ---------------------------------------------------------------- */
@@ -181,9 +258,12 @@
   function person(bx, by, a, p) {
     var g = [];
 
-    /* 椅子。背もたれが人の後ろに立つ。 */
+    /* 椅子。背もたれが人の後ろに立つ。椅子は呼吸で動かさない。 */
     g.push(box(bx + 0.44, by - 0.06, 0, 1.10, 0.13, 1.16, SCENE.chairDark));
     g.push(box(bx + 0.44, by - 0.06, 0.44, 1.10, 0.78, 0.10, SCENE.chair));
+
+    /* ここから下は「体」。待機中もゆっくり上下させて、止まった置物に見せない。 */
+    g.push('<g class="iso-body">');
 
     /* 後頭部の髪は顔より先に描く。あとから描くと顔を覆ってしまう。 */
     if (a.hair) g.push(box(bx + 0.68, by + 0.24, 1.10, 0.60, 0.10, 0.42, a.hair));
@@ -191,20 +271,30 @@
     /* 胴。役割色。 */
     g.push('<g class="iso-person">');
     g.push(box(bx + 0.62, by + 0.30, 0.52, 0.74, 0.50, 0.60, a.accent));
+    g.push(glossTop(bx + 0.62, by + 0.30, 0.52, 0.74, 0.50, 0.60));
     g.push('</g>');
 
-    /* 腕。胴の左右に接して置く。作業中はここが上下する。 */
-    g.push('<g class="iso-arm">');
+    /* 腕。胴の左右に接して置く。作業中はここが上下する。
+       左右を別のグループにして、CSS側で位相をずらす。
+       同時に同じ高さで動くと、打鍵ではなく体操に見える。 */
+    g.push('<g class="iso-arm iso-arm-l">');
     g.push(box(bx + 0.52, by + 0.42, 0.68, 0.13, 0.62, 0.13, a.accentLight));
+    g.push('</g>');
+    g.push('<g class="iso-arm iso-arm-r">');
     g.push(box(bx + 1.30, by + 0.42, 0.68, 0.13, 0.62, 0.13, a.accentLight));
     g.push('</g>');
 
-    /* 首と頭。 */
-    g.push('<g class="iso-person">');
+    /* 首と頭。発話中はここだけ小さく頷く。 */
+    g.push('<g class="iso-head"><g class="iso-person">');
     g.push(box(bx + 0.86, by + 0.46, 1.06, 0.28, 0.20, 0.08, p.skin));
     g.push(box(bx + 0.74, by + 0.36, 1.12, 0.52, 0.38, 0.42, p.skin));
     /* 前髪。厚くすると兜のようになるので薄く乗せる。 */
     if (a.hair) g.push(box(bx + 0.72, by + 0.34, 1.50, 0.56, 0.42, 0.08, a.hair));
+    /* 光沢は一番上の面へ。髪があるときに地肌側へ掛けても髪に隠れて見えない。 */
+    if (a.hair) g.push(glossTop(bx + 0.72, by + 0.34, 1.50, 0.56, 0.42, 0.08));
+    else g.push(glossTop(bx + 0.74, by + 0.36, 1.12, 0.52, 0.38, 0.42));
+    g.push('</g></g>');
+
     g.push('</g>');
 
     return g.join('');
@@ -254,6 +344,17 @@
    */
   function auraDefs() {
     return '<defs>' +
+      /* 接地影。中心 → 外側で消える。 */
+      '<radialGradient id="iso-contact">' +
+        '<stop offset="0" stop-color="rgba(30,24,12,0.30)"/>' +
+        '<stop offset="0.6" stop-color="rgba(30,24,12,0.14)"/>' +
+        '<stop offset="1" stop-color="rgba(30,24,12,0)"/>' +
+      '</radialGradient>' +
+      /* 頭頂・肩の光沢。丸みを出すために薄く重ねる。 */
+      '<radialGradient id="iso-gloss" cx="0.35" cy="0.25" r="0.75">' +
+        '<stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>' +
+        '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>' +
+      '</radialGradient>' +
       '<radialGradient id="aura-gold">' +
         '<stop offset="0.45" stop-color="#ffd76a" stop-opacity="0"/>' +
         '<stop offset="0.78" stop-color="#ffcf4d" stop-opacity="0.5"/>' +
@@ -277,19 +378,32 @@
       g.push('<ellipse class="iso-aura" cx="' + ac.x.toFixed(1) + '" cy="' + ac.y.toFixed(1) +
         '" rx="30" ry="42" fill="url(#aura-' + auraKind + ')"/>');
     }
+    /* 影は動かさない。体だけ上下させると、足で床を蹴っているように見える。 */
     g.push(shadowAt(0.5, 0.55, 0.44));
+
     /* 脚2本。歩行中はCSSで交互に振る。 */
     g.push('<g class="iso-leg iso-leg-l">' + box(0.32, 0.4, 0, 0.17, 0.22, 0.44, SCENE.chairDark) + '</g>');
     g.push('<g class="iso-leg iso-leg-r">' + box(0.56, 0.4, 0, 0.17, 0.22, 0.44, SCENE.chairDark) + '</g>');
+
+    /* 腰から上。歩幅に合わせて上下する（歩行の上下動）。
+       親の <g> は panel が transform で移動させるので、ここは内側に作る。 */
+    g.push('<g class="iso-bob">');
     /* 胴 */
     g.push(box(0.24, 0.32, 0.42, 0.58, 0.4, 0.58, a.accent));
-    /* 腕 */
-    g.push(box(0.15, 0.38, 0.55, 0.1, 0.3, 0.38, a.accentLight));
-    g.push(box(0.83, 0.38, 0.55, 0.1, 0.3, 0.38, a.accentLight));
+    g.push(glossTop(0.24, 0.32, 0.42, 0.58, 0.4, 0.58));
+    /* 腕。歩行中は脚と逆位相で振る。 */
+    g.push('<g class="iso-swing iso-swing-l">' + box(0.15, 0.38, 0.55, 0.1, 0.3, 0.38, a.accentLight) + '</g>');
+    g.push('<g class="iso-swing iso-swing-r">' + box(0.83, 0.38, 0.55, 0.1, 0.3, 0.38, a.accentLight) + '</g>');
     /* 頭 */
     if (a.hair) g.push(box(0.26, 0.28, 1.0, 0.52, 0.09, 0.36, a.hair));
     g.push(box(0.28, 0.32, 1.0, 0.46, 0.34, 0.38, p.skin));
-    if (a.hair) g.push(box(0.26, 0.3, 1.36, 0.5, 0.38, 0.08, a.hair));
+    if (a.hair) {
+      g.push(box(0.26, 0.3, 1.36, 0.5, 0.38, 0.08, a.hair));
+      g.push(glossTop(0.26, 0.3, 1.36, 0.5, 0.38, 0.08));
+    } else {
+      g.push(glossTop(0.28, 0.32, 1.0, 0.46, 0.34, 0.38));
+    }
+    g.push('</g>');
     return g.join('');
   }
 
@@ -419,6 +533,10 @@
    *   zoneLabels 部門ラベルを置く位置（viewBox座標）
    */
   function render(data) {
+    /* 登録簿は描画ごとに作り直す。使い回すと前回の色が残る。 */
+    gradRegistry = {};
+    gradOrder = [];
+
     var p = data.palette;
     var W = data.floor.w;
     var D = data.floor.d;
@@ -524,8 +642,13 @@
           '" rx="34" ry="46" fill="url(#aura-' + auraKind + ')"/>';
       }
 
+      /* 動きの位相。全員が同じ拍で動くと機械の列に見えるので、席ごとにずらす。
+         乱数だと再描画のたびに変わってしまうため、席順から決める。 */
+      var phase = ((i * 0.41) % 1.9).toFixed(2);
+
       parts.push(
         '<g class="iso-agent" data-agent="' + a.id + '" data-aura="' + auraKind + '" ' +
+        'style="--ph:' + phase + '" ' +
         'tabindex="0" role="button" ' +
         'aria-label="' + esc(a.label) + 'の席を開く">' + glow + aura + body + '</g>'
       );
@@ -578,7 +701,9 @@
       },
       svg: '<svg class="iso-svg" viewBox="' + vb.x.toFixed(1) + ' ' + vb.y.toFixed(1) + ' ' +
         vb.w.toFixed(1) + ' ' + vb.h.toFixed(1) +
-        '" role="img" aria-label="ENGULFのオフィス見取り図">' + auraDefs() + parts.join('') + '</svg>'
+        '" role="img" aria-label="ENGULFのオフィス見取り図">' +
+        auraDefs().replace('</defs>', gradOrder.map(function (k) { return gradRegistry[k]; }).join('') + '</defs>') +
+        parts.join('') + '</svg>'
     };
   }
 

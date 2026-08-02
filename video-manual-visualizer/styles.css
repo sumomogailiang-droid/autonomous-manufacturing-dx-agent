@@ -772,19 +772,104 @@ td .note { display: block; color: var(--text-muted); font-size: 12px; margin-top
 .iso-agent:hover .iso-glow { opacity: .18; }
 .iso-agent.is-working .iso-glow { opacity: .42; }
 
-/* 作業中だけ腕と画面が動く。意味のない点滅はしない。 */
-.iso-agent.is-working .iso-arm { animation: office-type .62s ease-in-out infinite alternate; }
-.iso-agent.is-working .iso-screen { animation: office-blink 1.1s steps(1) infinite; }
-.iso-agent.is-working .iso-tool { animation: office-lift .9s ease-in-out infinite alternate; }
+/* --- 動き -----------------------------------------------------------
+ *
+ * 方針は3つ。
+ *
+ * 1. 折り返し（alternate）だけで作らない。
+ *    行って戻るだけの往復は、両端で必ず一瞬止まるので機械的に見える。
+ *    打鍵なら「速く落ちてゆっくり戻る」など、動きごとに緩急を変える。
+ *
+ * 2. 全員を同じ拍で動かさない。
+ *    席ごとに --ph（秒）が入っているので、負の遅延で開始位置をずらす。
+ *    負にするのは、正の遅延だと最初だけ止まって見えるため。
+ *
+ * 3. 待機中も完全には止めない。
+ *    呼吸だけは常時動かす。ただし振幅は1px未満に抑え、
+ *    「動いている＝処理中」と誤読させない。稼働の表示は席の光と数字が持つ。
+ *
+ * transform-box: fill-box は、回転の中心を「その図形の外接箱」で取るため。
+ * 既定（view-box）だと図全体の座標で回ってしまい、肩や腰で振れない。
+ */
 
-@keyframes office-type { from { transform: translateY(0); } to { transform: translateY(-2.4px); } }
-@keyframes office-lift { from { transform: translateY(0); } to { transform: translateY(-1.6px); } }
-@keyframes office-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: .55; } }
+.iso-body,
+.iso-arm,
+.iso-head,
+.iso-leg,
+.iso-bob,
+.iso-swing { will-change: transform; }
+
+/* 位相のずらし方。
+   animation の一括指定は delay も 0 に戻してしまうので、
+   一括指定を書いた場所ごとに delay を書き直す。まとめて先に書くと効かない。 */
+
+/* 呼吸。稼働に関係なく常時。振幅を小さくし、周期を席ごとにずらす。 */
+.iso-body {
+  animation: iso-breathe 4.2s cubic-bezier(.45, 0, .55, 1) infinite;
+  animation-delay: calc(var(--ph, 0) * -1s);
+}
+
+@keyframes iso-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-.7px); }
+}
+
+/* 打鍵。落ちは速く、戻りは遅い。左右で位相をずらす。 */
+.iso-agent.is-working .iso-arm-l {
+  animation: iso-type .58s cubic-bezier(.3, .8, .4, 1) infinite;
+  animation-delay: calc(var(--ph, 0) * -1s);
+}
+.iso-agent.is-working .iso-arm-r {
+  animation: iso-type .58s cubic-bezier(.3, .8, .4, 1) infinite;
+  animation-delay: calc(var(--ph, 0) * -1s - .29s);
+}
+
+@keyframes iso-type {
+  0% { transform: translateY(-2.6px); }
+  38% { transform: translateY(0); }
+  100% { transform: translateY(-2.6px); }
+}
+
+/* 画面。steps() の明滅は「壊れている」ように見えるので、明るさを揺らす。 */
+.iso-agent.is-working .iso-screen {
+  animation: iso-glow 2.4s cubic-bezier(.45, 0, .55, 1) infinite;
+  animation-delay: calc(var(--ph, 0) * -1s);
+}
+
+@keyframes iso-glow {
+  0%, 100% { opacity: .72; }
+  50% { opacity: 1; }
+}
+
+/* 手元の書類。呼吸より遅く、腕とは別の周期にする。 */
+.iso-agent.is-working .iso-tool {
+  animation: iso-lift 2.9s cubic-bezier(.45, 0, .55, 1) infinite;
+  animation-delay: calc(var(--ph, 0) * -1s);
+}
+
+@keyframes iso-lift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.8px); }
+}
+
+/* 発話中の頷き。首の付け根で回すので、体全体は動かない。 */
+.iso-head { transform-box: fill-box; transform-origin: 50% 100%; }
+.iso-agent.is-talking .iso-head { animation: iso-nod 1.35s cubic-bezier(.4, 0, .3, 1) infinite; }
+
+@keyframes iso-nod {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  22% { transform: translateY(1.1px) rotate(1.6deg); }
+  55% { transform: translateY(-.4px) rotate(-.7deg); }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .iso-agent.is-working .iso-arm,
+  .iso-body,
+  .iso-agent.is-working .iso-arm-l,
+  .iso-agent.is-working .iso-arm-r,
   .iso-agent.is-working .iso-screen,
-  .iso-agent.is-working .iso-tool { animation: none; }
+  .iso-agent.is-working .iso-tool,
+  .iso-agent.is-talking .iso-head { animation: none; }
+  .iso-body, .iso-arm, .iso-head { will-change: auto; }
 }
 
 /* --- 吹き出し ------------------------------------------------------- */
@@ -1018,32 +1103,93 @@ td .note { display: block; color: var(--text-muted); font-size: 12px; margin-top
 .iso-agent.is-working .iso-aura,
 .iso-agent:hover .iso-aura { opacity: .95; }
 
-/* 呼吸のようなゆらぎ。点滅ではなくゆっくり。 */
+/* 呼吸のようなゆらぎ。点滅ではなくゆっくり。
+   明るさだけだと平面的なので、わずかに広がりも変える。
+   拡大の中心を図形自身に置くため transform-box: fill-box を指定する。 */
+.iso-aura { transform-box: fill-box; transform-origin: 50% 50%; }
+
 @keyframes aura-breathe {
-  0%, 100% { opacity: .45; }
-  50% { opacity: .75; }
+  0%, 100% { opacity: .45; transform: scale(1); }
+  50% { opacity: .75; transform: scale(1.05); }
 }
-.iso-aura { animation: aura-breathe 4.6s ease-in-out infinite; }
-.iso-agent.is-working .iso-aura { animation: aura-breathe 1.8s ease-in-out infinite; }
+.iso-aura {
+  animation: aura-breathe 4.6s cubic-bezier(.45, 0, .55, 1) infinite;
+  animation-delay: calc(var(--ph, 0) * -1s);
+}
+.iso-agent.is-working .iso-aura {
+  animation: aura-breathe 2.2s cubic-bezier(.45, 0, .55, 1) infinite;
+  animation-delay: calc(var(--ph, 0) * -1s);
+}
 
 /* 体の縁取り。オーロラの色でにじませる。 */
 .iso-agent[data-aura="gold"] .iso-person { filter: drop-shadow(0 0 4px rgba(245, 197, 66, .8)); }
 .iso-agent[data-aura="ocean"] .iso-person { filter: drop-shadow(0 0 4px rgba(56, 207, 217, .8)); }
 
 @media (prefers-reduced-motion: reduce) {
-  .iso-aura { animation: none; }
+  /* 稼働中の指定のほうが詳細度が高いので、こちらも同じ強さで打ち消す。
+     .iso-aura だけだと稼働中の席が止まらない。 */
+  .iso-aura,
+  .iso-agent.is-working .iso-aura { animation: none; transform: none; }
 }
 
 /* --- 歩行者 --------------------------------------------------------- */
 
-.iso-walker .iso-leg { transform-origin: center 100%; }
-.iso-walker.is-walking .iso-leg-l { animation: leg-swing .42s ease-in-out infinite alternate; }
-.iso-walker.is-walking .iso-leg-r { animation: leg-swing .42s ease-in-out infinite alternate-reverse; }
-@keyframes leg-swing { from { transform: translateY(0); } to { transform: translateY(-2.6px); } }
+/*
+ * 歩行。
+ *
+ * 上下だけの往復では「跳ねている」ようにしか見えないので、
+ * 脚は腰で振り（回転）、上半身は歩幅の2倍の周期で上下させる。
+ * 実際の歩行では、体は1歩ごとに一度沈んで戻るため、
+ * 脚1周期に対して体は2回上下する。ここを合わせると急に人らしくなる。
+ *
+ * 腕は脚と逆位相。同じ側の手足が同時に前へ出ると不自然に見える。
+ */
+.iso-walker .iso-leg,
+.iso-walker .iso-swing { transform-box: fill-box; transform-origin: 50% 0%; }
 
-/* 離席中は席から人が消える（歩行者として歩いている） */
-.iso-agent.is-away .iso-person,
-.iso-agent.is-away .iso-arm { opacity: 0; transition: opacity .3s ease; }
+.iso-walker.is-walking .iso-leg-l { animation: leg-swing .68s cubic-bezier(.42, 0, .58, 1) infinite; }
+.iso-walker.is-walking .iso-leg-r {
+  animation: leg-swing .68s cubic-bezier(.42, 0, .58, 1) infinite;
+  animation-delay: -.34s;
+}
+.iso-walker.is-walking .iso-swing-l {
+  animation: arm-swing .68s cubic-bezier(.42, 0, .58, 1) infinite;
+  animation-delay: -.34s;
+}
+.iso-walker.is-walking .iso-swing-r { animation: arm-swing .68s cubic-bezier(.42, 0, .58, 1) infinite; }
+.iso-walker.is-walking .iso-bob { animation: walk-bob .34s cubic-bezier(.42, 0, .58, 1) infinite; }
+
+@keyframes leg-swing {
+  0%, 100% { transform: rotate(11deg) translateY(0); }
+  50% { transform: rotate(-11deg) translateY(-1.6px); }
+}
+@keyframes arm-swing {
+  0%, 100% { transform: rotate(7deg); }
+  50% { transform: rotate(-7deg); }
+}
+@keyframes walk-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.4px); }
+}
+
+/* 立ち止まっているときも呼吸だけは続ける。
+   歩行中の指定のほうが詳細度が高いので、歩き出せばそちらに切り替わる。 */
+.iso-walker .iso-bob { animation: iso-breathe 4.2s cubic-bezier(.45, 0, .55, 1) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .iso-walker .iso-bob,
+  .iso-walker.is-walking .iso-leg-l,
+  .iso-walker.is-walking .iso-leg-r,
+  .iso-walker.is-walking .iso-swing-l,
+  .iso-walker.is-walking .iso-swing-r,
+  .iso-walker.is-walking .iso-bob { animation: none; transform: none; }
+  .iso-walker .iso-leg, .iso-walker .iso-bob, .iso-walker .iso-swing { will-change: auto; }
+}
+
+/* 離席中は席から人が消える（歩行者として歩いている）。
+   体ごと消す。胴と腕だけを消すと、後頭部の髪が椅子の上に残ってしまう。 */
+.iso-agent.is-away .iso-body { opacity: 0; transition: opacity .3s ease; }
+.iso-body { transition: opacity .3s ease; }
 
 /* --- 部門ラベル ------------------------------------------------------ */
 

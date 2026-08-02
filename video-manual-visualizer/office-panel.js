@@ -521,6 +521,8 @@
       var g = seatGroup(id);
       if (g) {
         g.classList.toggle('is-working', state === 'working' || state === 'talking');
+        /* 発話中は首を小さく動かす。作業中とは別の動きにして見分けられるようにする。 */
+        g.classList.toggle('is-talking', state === 'talking');
         g.classList.toggle('is-away', state === 'away');
       }
       var seat = roster.querySelector('.office-seat[data-agent="' + id + '"] [data-state]');
