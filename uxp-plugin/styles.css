@@ -248,6 +248,22 @@ textarea { min-height: 96px; resize: vertical; line-height: 1.7; }
 }
 .output:empty::before { content: "ここに結果が表示されます"; color: var(--mu); }
 
+/*
+ * 調査結果。APIのメソッド名がそのまま並ぶため、折り返さず横スクロールさせる。
+ * 折り返すと名前の切れ目が分からなくなり、読み違える。
+ */
+.inspect-out {
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; line-height: 1.7;
+  white-space: pre;
+  max-height: 320px; overflow: auto;
+  margin: 6px 0 0;
+}
+
 .stat { font-size: 11px; color: var(--mu); font-variant-numeric: tabular-nums; }
 
 /* --- テーブル ---------------------------------------------------------- */

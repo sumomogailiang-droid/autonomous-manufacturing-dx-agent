@@ -193,6 +193,261 @@ const adapter = {
   },
 
   /**
+   * 指定シーケンスの指定トラックにあるテキストレイヤーを調査する。
+   *
+   * === なぜ「変換」ではなく「調査」なのか ===
+   *
+   * 段落テキストとポイントテキストの切り替えが premierepro API で
+   * できるかどうか、公開されている情報の中では確認が取れていない。
+   * テキスト系で確認できるのは文字列とスタイル（フォント・サイズ・色）までで、
+   * レイヤーの種類を切り替える口があるとは限らない。
+   *
+   * 動くかどうか分からないAPIを、動く前提で書いてはいけない。
+   * そこで先に「その環境のAPIが実際に何を公開しているか」を書き出す。
+   * 結果を見てから変換を実装する。
+   *
+   * 見つからなければ「見つからなかった」と書く。それが答えになる。
+   *
+   * @param {{sequenceName?:string, trackIndex?:number, maxItems?:number}} opts
+   *        trackIndex は1始まり（V3なら3）
+   * @returns {Promise<object>} 調査結果。report が人が読む用の本文。
+   */
+  async inspectTextLayers(opts) {
+    const o = opts || {};
+    const trackIndex = Number.isFinite(o.trackIndex) ? o.trackIndex : 3;
+    const maxItems = Number.isFinite(o.maxItems) ? o.maxItems : 5;
+    const wantName = o.sequenceName || '';
+
+    if (!this.isPremiere()) {
+      return {
+        ok: false,
+        environment: this.environment(),
+        sequence: { requested: wantName, found: null },
+        trackIndex,
+        items: [],
+        errors: [],
+        report:
+          'モック環境のため調査できません。\n' +
+          'Premiere Pro で「編集アシスタント」パネルを開いて実行してください。'
+      };
+    }
+
+    /* --- ここから Premiere API（未検証） --- */
+    const errors = [];
+    const lines = [];
+    const say = (s) => lines.push(s);
+
+    /* オブジェクトが実際に持っているメソッド名を出す。
+       APIの版差はここを見るのが一番早い。 */
+    const surfaceOf = (obj) => {
+      if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return [];
+      const names = new Set();
+      let cur = obj;
+      for (let depth = 0; cur && cur !== Object.prototype && depth < 4; depth++) {
+        for (const k of Object.getOwnPropertyNames(cur)) {
+          if (k === 'constructor') continue;
+          names.add(k);
+        }
+        cur = Object.getPrototypeOf(cur);
+      }
+      return [...names].sort();
+    };
+
+    /* 呼び方が版で違うので、候補を順に試して通ったものを使う */
+    const tryCall = async (obj, names, args) => {
+      for (const n of names) {
+        try {
+          if (typeof obj[n] === 'function') {
+            const v = await obj[n].apply(obj, args || []);
+            if (v !== undefined && v !== null) return { ok: true, via: n + '()', value: v };
+          } else if (obj[n] !== undefined && obj[n] !== null) {
+            const v = await obj[n];
+            if (v !== undefined && v !== null) return { ok: true, via: n, value: v };
+          }
+        } catch (e) {
+          errors.push(`${n}: ${e && e.message ? e.message : String(e)}`);
+        }
+      }
+      return { ok: false, via: null, value: null };
+    };
+
+    const project = await ppro.Project.getActiveProject();
+    if (!project) throw new Error('プロジェクトが開かれていません。');
+
+    /* --- シーケンスを名前で探す --- */
+    let seq = null;
+    let seqName = '';
+    const seqList = await tryCall(project, ['getSequences', 'getSequenceList'], []);
+    if (seqList.ok && seqList.value && seqList.value.length) {
+      for (const s of seqList.value) {
+        const n = await tryCall(s, ['name', 'getName'], []);
+        const nm = n.ok ? String(n.value) : '';
+        if (!wantName || nm === wantName) { seq = s; seqName = nm; break; }
+      }
+      if (!seq) {
+        const all = [];
+        for (const s of seqList.value) {
+          const n = await tryCall(s, ['name', 'getName'], []);
+          all.push(n.ok ? String(n.value) : '(名前不明)');
+        }
+        say(`シーケンス「${wantName}」が見つかりませんでした。`);
+        say('このプロジェクトにあるシーケンス:');
+        for (const a of all) say('  - ' + a);
+        return {
+          ok: false, environment: this.environment(),
+          sequence: { requested: wantName, found: null, available: all },
+          trackIndex, items: [], errors, report: lines.join('\n')
+        };
+      }
+    } else {
+      /* 一覧が取れない版では、開いているシーケンスで代用する */
+      seq = await project.getActiveSequence();
+      const n = seq && await tryCall(seq, ['name', 'getName'], []);
+      seqName = n && n.ok ? String(n.value) : '';
+      say('シーケンス一覧APIが使えないため、アクティブなシーケンスを対象にしました。');
+      if (wantName && seqName && seqName !== wantName) {
+        say(`⚠ 対象が指定と違います。指定「${wantName}」／ 実際「${seqName}」`);
+        say('  目的のシーケンスを開いてから、もう一度実行してください。');
+      }
+    }
+    if (!seq) throw new Error('シーケンスを取得できませんでした。');
+
+    say(`シーケンス : ${seqName || '(名前不明)'}`);
+    say(`対象トラック: V${trackIndex}`);
+    say('');
+
+    /* --- トラックとクリップ --- */
+    const track = await seq.getVideoTrack(trackIndex - 1);
+    if (!track) throw new Error(`V${trackIndex} が存在しません。`);
+
+    let items = [];
+    const TT = (ppro.Constants && ppro.Constants.TrackItemType) || {};
+    const got = await tryCall(track, ['getTrackItems'], [TT.CLIP !== undefined ? TT.CLIP : 1, false]);
+    if (got.ok) items = got.value;
+    else {
+      const got2 = await tryCall(track, ['getTrackItems'], []);
+      if (got2.ok) items = got2.value;
+    }
+    items = Array.isArray(items) ? items : [];
+
+    say(`クリップ数 : ${items.length}`);
+    say('');
+
+    if (!items.length) {
+      say('V' + trackIndex + ' にクリップがありません。トラック番号を確認してください。');
+      return {
+        ok: false, environment: this.environment(),
+        sequence: { requested: wantName, found: seqName },
+        trackIndex, items: [], errors, report: lines.join('\n')
+      };
+    }
+
+    /* --- 先頭数件の中身を書き出す --- */
+    const dumped = [];
+    for (let i = 0; i < Math.min(items.length, maxItems); i++) {
+      const it = items[i];
+      const nm = await tryCall(it, ['name', 'getName'], []);
+      say(`── クリップ ${i + 1}: ${nm.ok ? nm.value : '(名前不明)'}`);
+      say('  TrackItem が持つもの:');
+      say('    ' + surfaceOf(it).join(', '));
+
+      const chainRes = await tryCall(it, ['getComponentChain'], []);
+      if (!chainRes.ok) {
+        say('  ⚠ コンポーネントチェーンを取得できませんでした。');
+        say('');
+        continue;
+      }
+      const chain = chainRes.value;
+      const cntRes = await tryCall(chain, ['getComponentCount'], []);
+      const count = cntRes.ok ? Number(cntRes.value) : 0;
+      say(`  コンポーネント数: ${count}`);
+
+      const comps = [];
+      for (let c = 0; c < count; c++) {
+        const compRes = await tryCall(chain, ['getComponentAtIndex'], [c]);
+        if (!compRes.ok) continue;
+        const comp = compRes.value;
+        const mn = await tryCall(comp, ['getMatchName', 'matchName'], []);
+        const cn = await tryCall(comp, ['getComponentName', 'name'], []);
+        const pcRes = await tryCall(comp, ['getParamCount'], []);
+        const pc = pcRes.ok ? Number(pcRes.value) : 0;
+        say(`    [${c}] ${cn.ok ? cn.value : '?'}  (matchName: ${mn.ok ? mn.value : '?'})  パラメータ${pc}件`);
+
+        const params = [];
+        for (let p = 0; p < pc; p++) {
+          const prRes = await tryCall(comp, ['getParam'], [p]);
+          if (!prRes.ok) continue;
+          const prm = prRes.value;
+          const dn = await tryCall(prm, ['displayName', 'getDisplayName'], []);
+          const label = dn.ok ? String(dn.value) : '(名前不明)';
+          params.push(label);
+
+          /* テキストらしいパラメータだけ、値の中身まで踏み込む */
+          const looksText = /text|テキスト|source ?text|ソース/i.test(label);
+          if (!looksText) continue;
+          say(`        ▸ テキストらしいパラメータ: ${label}`);
+          const valRes = await tryCall(prm, ['getStartValue', 'getValue'], []);
+          if (!valRes.ok) { say('          値を取得できませんでした。'); continue; }
+          const val = valRes.value;
+          say(`          値が持つもの: ${surfaceOf(val).join(', ')}`);
+          const styleRes = await tryCall(val, ['getTextStyle'], []);
+          if (styleRes.ok) {
+            say(`          TextStyle が持つもの: ${surfaceOf(styleRes.value).join(', ')}`);
+          }
+        }
+        if (params.length) say(`        パラメータ名: ${params.join(' / ')}`);
+        comps.push({ index: c, matchName: mn.value || null, name: cn.value || null, params });
+      }
+      dumped.push({ index: i, name: nm.value || null, components: comps });
+      say('');
+    }
+
+    if (items.length > maxItems) {
+      say(`※ 先頭${maxItems}件のみ書き出しました（全${items.length}件）。`);
+      say('');
+    }
+
+    /* --- 段落／ポイントの切り替え口があるかを機械的に探す --- */
+    const KEY = /(boxText|box_text|pointText|point_text|areaText|textBox|paragraph|段落|ポイント|layerType|textType)/i;
+    const hits = [];
+    for (const d of dumped) {
+      for (const c of d.components) {
+        for (const p of c.params) if (KEY.test(p)) hits.push(`${c.name || c.matchName} → ${p}`);
+      }
+    }
+    say('── 段落／ポイントの切り替えらしい項目');
+    if (hits.length) {
+      for (const h of hits) say('  ' + h);
+      say('');
+      say('候補が見つかりました。この出力をチャットへ貼ってください。変換の実装に進めます。');
+    } else {
+      say('  見つかりませんでした。');
+      say('');
+      say('この結果だけでは「APIに無い」と断定はできません（名前が想定と違う可能性）。');
+      say('上の「持っているもの」の一覧ごとチャットへ貼ってください。こちらで確認します。');
+    }
+
+    if (errors.length) {
+      say('');
+      say('── 試したが通らなかった呼び出し（参考。失敗自体は想定内）');
+      for (const e of [...new Set(errors)].slice(0, 20)) say('  ' + e);
+    }
+
+    return {
+      ok: true,
+      environment: this.environment(),
+      sequence: { requested: wantName, found: seqName },
+      trackIndex,
+      itemCount: items.length,
+      items: dumped,
+      candidates: hits,
+      errors,
+      report: lines.join('\n')
+    };
+    /* --- ここまで Premiere API --- */
+  },
+
+  /**
    * 再生ヘッド位置のタイムコードを取得する。
    * カット記録（PDCA）で修正箇所を残すのに使う。
    * @returns {Promise<string>} 例 "00;08;08;44"

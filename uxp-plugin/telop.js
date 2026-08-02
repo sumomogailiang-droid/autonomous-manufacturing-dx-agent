@@ -23,8 +23,243 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-/** 1行の分割候補として優先する助詞 */
-const PARTICLES = ['は', 'が', 'を', 'に', 'で', 'と', 'も', 'へ', 'や', 'ね', 'よ'];
+/** 1行の下限。マニュアルは「1行15〜18文字」。 */
+const MIN_CHARS = 15;
+
+/* ------------------------------------------------------------------ *
+ * 改行位置の決め方
+ *
+ * マニュアル（テロップ / 記号・改行・主語）:
+ *   意味のまとまりで改行します。
+ *     NG：～と／いうと      OK：～／というと
+ *     NG：～／と言っていた  OK：～と／言っていた
+ *
+ * 辞書なしで形態素解析はできない。かわりに日本語の性質を使う。
+ * 文は「自立語（漢字・カタカナ・英数字）＋付属語（ひらがな）」の繰り返しで
+ * できているため、**ひらがな→漢字・カタカナ・英数字** の切り替わりが
+ * 文節の頭になりやすい。そこだけを改行候補にすると、語の途中で切れなくなる。
+ *
+ * 上のNG例は、この方法だと自動的に避けられる。
+ *   「という」   … と も いう も同じひらがな連なので、間に候補が立たない
+ *   「と言っていた」… と（ひらがな）→ 言（漢字）で候補が立つ
+ *
+ * 以前は文字数だけで折っていたため「触らなかっ／たんです」のように
+ * 語の途中で切れていた。上の規定に反するので候補位置を制限した。
+ * ------------------------------------------------------------------ */
+
+/** 行頭に置いてはいけない文字（拗促音・長音・閉じ括弧・句読点） */
+const NO_LINE_HEAD =
+  'ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶーゝゞ々' +
+  '」』）】〉》］｝)]、。，．！？!?…・';
+
+/** 行末に置いてはいけない文字（開き括弧） */
+const NO_LINE_TAIL = '「『（【〈《［｛([';
+
+const RE_HIRA = /[ぁ-ゟ]/;
+const RE_HEAD = /[゠-ヿ一-鿿々０-９0-9Ａ-Ｚａ-ｚA-Za-z]/;
+const RE_DIGIT = /[0-9０-９]/;
+
+/**
+ * 文を「切ってよい単位」へ分ける。
+ *
+ * 各要素は次を持つ:
+ *   text    本文
+ *   sep     直前が読点・空白（同じ行に載せるときは半角スペースでつなぐ）
+ *   pref    直前が読点（改行位置としてはここが最も自然）
+ *   noBreak 直前で改行してはいけない（「3、4年」のような数字間の読点）
+ */
+function toChunks(paragraph) {
+  const chars = [...paragraph];
+  const chunks = [];
+  let cur = '';
+  let pending = { sep: false, pref: false, noBreak: false };
+
+  function flush() {
+    if (!cur) return;
+    chunks.push({ text: cur, sep: pending.sep, pref: pending.pref, noBreak: pending.noBreak });
+    cur = '';
+    pending = { sep: false, pref: false, noBreak: false };
+  }
+
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+
+    /* 句読点は落として半角スペース相当の区切りにする（句読点は使わない規定） */
+    if (ch === '、' || ch === '。' || ch === '，' || ch === '．') {
+      const prev = chars[i - 1] || '';
+      const next = chars[i + 1] || '';
+      flush();
+      pending.sep = true;
+      /* 数字にはさまれた読点は文の区切りではない。
+         「3、4年くらい前で」を「3」と「4年くらい前で」の2行に割らない。 */
+      if (RE_DIGIT.test(prev) && RE_DIGIT.test(next)) pending.noBreak = true;
+      /* 読点のうしろが促音・拗音・長音だと、そこで折ると行頭禁則に反する。
+         「…じゃないか、って思って」の「って」を行頭へ落とさない。 */
+      else if (NO_LINE_HEAD.indexOf(next) !== -1) pending.noBreak = true;
+      else pending.pref = true;
+      continue;
+    }
+
+    /* 元から入っている空白も区切りとして扱う */
+    if (/\s/.test(ch)) {
+      const next = chars[i + 1] || '';
+      flush();
+      pending.sep = true;
+      if (NO_LINE_HEAD.indexOf(next) !== -1) pending.noBreak = true;
+      else pending.pref = true;
+      continue;
+    }
+
+    /* 文節の頭で切る */
+    const prev = chars[i - 1];
+    if (cur && prev && RE_HIRA.test(prev) && RE_HEAD.test(ch) &&
+        NO_LINE_HEAD.indexOf(ch) === -1 && NO_LINE_TAIL.indexOf(prev) === -1) {
+      flush();
+    }
+    cur += ch;
+  }
+  flush();
+  return chunks;
+}
+
+/*
+ * 節の切れ目。
+ *
+ * 全部ひらがなの塊はMAXを超えても文節の候補が立たない
+ * （ひらがな→漢字の切り替わりが無いため）。
+ * そこで、節を終わらせる助詞・助動詞の直後を候補にする。
+ * 「とらわれてるって／わけじゃないんですけど」のように折れる。
+ *
+ * ここに助詞1文字（は・が・を…）を入れてはいけない。
+ * 「ないんで／すけど」のように、助動詞「です」の途中で切れる。
+ */
+const CLAUSE_ENDINGS = [
+  'って', 'けど', 'けれど', 'から', 'ので', 'のに', 'ても', 'たら', 'なら', 'ながら',
+  'ました', 'ません', 'ますが', 'ですが'
+];
+
+/** [start, limit] の範囲で、いちばん後ろの節の切れ目を返す。無ければ -1。 */
+function findClauseBreak(chars, start, limit) {
+  for (let k = limit; k > start + 1; k--) {
+    if (NO_LINE_HEAD.indexOf(chars[k]) !== -1) continue;
+    for (const end of CLAUSE_ENDINGS) {
+      if (k - end.length < start) continue;
+      if (chars.slice(k - end.length, k).join('') === end) return k;
+    }
+  }
+  return -1;
+}
+
+/**
+ * 単体でMAXを超える塊を折る。
+ *
+ * 節の切れ目が無いときは、語を壊すより数文字の超過を許す。
+ * 超過は「文字数超過」として警告に出るので、人が気づける。
+ * 許容を超えて長い場合だけ文字数で切り、強制であることを返す。
+ */
+function splitOversized(chunk, MAX) {
+  const chars = [...chunk.text];
+  if (chars.length <= MAX) return { parts: [chunk], forced: 0 };
+
+  /* 語を壊さないために許す超過。これを超えたら切るしかない。 */
+  const TOLERANCE = 3;
+
+  const parts = [];
+  let forced = 0;
+  let start = 0;
+
+  while (chars.length - start > MAX) {
+    const at = findClauseBreak(chars, start, start + MAX);
+    if (at > start) {
+      parts.push(chars.slice(start, at).join(''));
+      start = at;
+      continue;
+    }
+    if (chars.length - start <= MAX + TOLERANCE) break;
+    parts.push(chars.slice(start, start + MAX).join(''));
+    start += MAX;
+    forced++;
+  }
+  const tail = chars.slice(start).join('');
+  if (tail) parts.push(tail);
+
+  return {
+    parts: parts.map((text, i) => ({
+      text,
+      sep: i === 0 ? chunk.sep : false,
+      pref: i === 0 ? chunk.pref : false,
+      noBreak: i === 0 ? chunk.noBreak : false
+    })),
+    forced
+  };
+}
+
+/**
+ * 1行の出来の悪さ。0が理想。
+ *
+ * @param {boolean} prefBreak   行末が読点の位置か
+ * @param {boolean} shortTail   行末が2文字以下の塊で終わるか
+ */
+function lineCost(n, MIN, MAX, prefBreak, shortTail, isLast) {
+  let c;
+  if (n > MAX) c = (n - MAX) * 40;
+  else if (n >= MIN) c = 0;
+  else c = (MIN - n) * (MIN - n);
+  /* 最後の行が短いのは自然なので軽く見る */
+  if (isLast && n < MIN) c = Math.min(c, (MIN - n) * 2);
+  /* 読点の位置で折れるならそちらを選ぶ */
+  if (prefBreak) c -= 6;
+  /* 「手に／職が欲しい」のように、短い塊で行を終えると
+     まとまりが切れて読みにくい。読点の位置なら自然なので除く。 */
+  if (shortTail && !prefBreak && !isLast) c += 12;
+  return c;
+}
+
+/**
+ * 塊を行へ詰める。貪欲だと短い塊が1行に取り残される
+ * （「な」だけの行ができる）ため、全体の出来で選ぶ。
+ */
+function packLines(chunks, MIN, MAX, relax) {
+  const n = chunks.length;
+  if (!n) return [];
+
+  const cost = new Array(n + 1).fill(Infinity);
+  const from = new Array(n + 1).fill(0);
+  cost[0] = 0;
+
+  for (let i = 0; i < n; i++) {
+    if (cost[i] === Infinity) continue;
+    let text = '';
+    for (let j = i; j < n; j++) {
+      text += (j > i && chunks[j].sep ? ' ' : '') + chunks[j].text;
+      const L = len(text);
+      if (L > MAX && j > i) break;
+      /* 改行禁止の位置では行を終えられない */
+      if (!relax && j < n - 1 && chunks[j + 1].noBreak) continue;
+      const isLast = j === n - 1;
+      const shortTail = j > i && len(chunks[j].text) <= 2;
+      const c = cost[i] + lineCost(L, MIN, MAX, !isLast && chunks[j + 1].pref, shortTail, isLast);
+      if (c < cost[j + 1]) { cost[j + 1] = c; from[j + 1] = i; }
+    }
+  }
+
+  /* 改行禁止が厳しすぎて詰められないときは、その制約だけ外して再試行する */
+  if (cost[n] === Infinity) {
+    if (!relax) return packLines(chunks, MIN, MAX, true);
+    return chunks.map((c) => c.text);
+  }
+
+  const out = [];
+  let j = n;
+  while (j > 0) {
+    const i = from[j];
+    let text = '';
+    for (let k = i; k < j; k++) text += (k > i && chunks[k].sep ? ' ' : '') + chunks[k].text;
+    out.unshift(text);
+    j = i;
+  }
+  return out;
+}
 
 /**
  * 文字起こしをテロップ行へ整形する。
@@ -35,6 +270,7 @@ const PARTICLES = ['は', 'が', 'を', 'に', 'で', 'と', 'も', 'へ', 'や'
  */
 function formatTelop(input, opts = {}) {
   const MAX = clamp(opts.maxChars ?? 18, 8, 30);
+  const MIN = Math.min(MIN_CHARS, MAX);
   const dictionary = opts.dictionary ?? [];
 
   if (!input || !input.trim()) {
@@ -48,43 +284,24 @@ function formatTelop(input, opts = {}) {
     .replace(/\?/g, '？');
 
   const lines = [];
+  let forcedCount = 0;
 
   for (const paragraph of normalized.split('\n')) {
     const p = paragraph.trim();
     if (!p) continue;
 
-    /* 2. 句読点で一次分割。句読点自体は落とす（半角スペース相当の区切り） */
-    const units = p.split(/[、。]/).map((s) => s.trim()).filter(Boolean);
-
-    let line = '';
-    for (const unit of units) {
-      const unitLen = [...unit].length;
-
-      /* 現在行に収まるなら、半角スペースでつなぐ */
-      if (len(line) + (line ? 1 : 0) + unitLen <= MAX) {
-        line = line ? line + ' ' + unit : unit;
-        continue;
-      }
-
-      if (line) { lines.push(line); line = ''; }
-
-      /* 3. 単体でMAXを超える場合は、助詞の直後を優先して折る */
-      let rest = unit;
-      while (len(rest) > MAX) {
-        const window = [...rest].slice(0, MAX).join('');
-        let cut = -1;
-        for (const particle of PARTICLES) {
-          const idx = window.lastIndexOf(particle);
-          /* 行頭すぎる位置で折ると読みにくいので、半分より後ろだけ採用する */
-          if (idx > cut && idx >= Math.floor(MAX * 0.5)) cut = idx;
-        }
-        const at = cut > 0 ? cut + 1 : MAX;
-        lines.push([...rest].slice(0, at).join(''));
-        rest = [...rest].slice(at).join('');
-      }
-      line = rest;
+    /* 2. 意味の切れ目で塊に分ける */
+    let chunks = [];
+    for (const c of toChunks(p)) {
+      const r = splitOversized(c, MAX);
+      forcedCount += r.forced;
+      chunks = chunks.concat(r.parts);
     }
-    if (line) lines.push(line);
+
+    /* 3. 塊を行へ詰める */
+    for (const line of packLines(chunks, MIN, MAX, false)) {
+      if (line) lines.push(line);
+    }
   }
 
   /* 4. 検査 */
@@ -93,6 +310,13 @@ function formatTelop(input, opts = {}) {
     const n = len(l);
     if (n > MAX) warnings.push({ line: i + 1, kind: '文字数超過', detail: `${n}文字（上限${MAX}）` });
   });
+  if (forcedCount) {
+    warnings.push({
+      line: 0,
+      kind: '強制改行',
+      detail: `意味の切れ目が見つからず文字数で折った箇所が${forcedCount}件あります。目視で確認してください。`
+    });
+  }
 
   const notation = checkNotation(lines, dictionary);
 

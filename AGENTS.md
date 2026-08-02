@@ -209,6 +209,8 @@ node tools/build-brief.mjs --public
 # 検証
 node video-manual-visualizer/validate-data.js   # データ検証
 node agents/test-mcp.mjs                        # MCP疎通テスト
+node tools/test-timecode.mjs                    # フレーム計算の検証
+node tools/test-telop.mjs                       # テロップ整形（改行位置）の検証
 node agents/governance.mjs                      # CTOによる全体監査（GO / NO-GO）
 
 # 体制の確認・操作

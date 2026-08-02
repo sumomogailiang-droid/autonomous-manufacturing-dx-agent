@@ -725,6 +725,96 @@ function buildTelopPanel() {
       toast('保存に失敗: ' + e.message);
     }
   });
+
+  buildInspectCard(host);
+}
+
+/*
+ * 既存テロップの調査。
+ *
+ * 「段落テキストをポイントテキストへ変えたい」のように、
+ * APIで触れるかどうか分からない操作を頼まれたときに使う。
+ *
+ * 変換をいきなり書くのではなく、まずその環境のAPIが何を公開しているかを
+ * 書き出す。分からないまま書いたコードは、動かなくても動いたように見えてしまう。
+ */
+function buildInspectCard(host) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '既存テロップの調査'));
+
+  const note = el('p', 'hint');
+  note.textContent =
+    '指定したシーケンスのトラックにあるクリップを開き、テキスト関連のAPIが' +
+    '実際に何を公開しているかを書き出します。変更は一切行いません。';
+  card.appendChild(note);
+
+  const seqLabel = el('label', 'field');
+  add(seqLabel, el('span', null, 'シーケンス名'));
+  const seqIn = el('input');
+  attr(seqIn, {
+    type: 'text', id: 'inspect-seq',
+    placeholder: 'CAMP_名古屋校_編集シーケンス'
+  });
+  seqLabel.appendChild(seqIn);
+  card.appendChild(seqLabel);
+
+  const trackLabel = el('label', 'field');
+  add(trackLabel, el('span', null, '対象トラック'));
+  const trackSel = el('select');
+  attr(trackSel, { id: 'inspect-track' });
+  for (let v = 1; v <= 8; v++) {
+    const o = el('option', null, 'V' + v);
+    attr(o, { value: String(v) });
+    if (v === 3) attr(o, { selected: 'selected' });
+    trackSel.appendChild(o);
+  }
+  trackLabel.appendChild(trackSel);
+  card.appendChild(trackLabel);
+
+  const row = el('div', 'btn-row');
+  const runBtn = el('button', 'btn btn-primary btn-sm', '調査する');
+  const copyBtn = el('button', 'btn btn-sm', '結果をコピー');
+  for (const b of [runBtn, copyBtn]) attr(b, { type: 'button' });
+  add(row, runBtn, copyBtn);
+  card.appendChild(row);
+
+  const out = el('pre', 'inspect-out');
+  attr(out, { id: 'inspect-out' });
+  out.hidden = true;
+  card.appendChild(out);
+
+  host.appendChild(card);
+
+  let lastReport = '';
+
+  runBtn.addEventListener('click', async () => {
+    runBtn.disabled = true;
+    runBtn.textContent = '調査中…';
+    try {
+      const r = await adapter.inspectTextLayers({
+        sequenceName: seqIn.value.trim(),
+        trackIndex: Number(trackSel.value)
+      });
+      lastReport = r.report || '';
+      out.textContent = lastReport;
+      out.hidden = false;
+      toast(r.ok ? '調査しました' : '調査できませんでした');
+    } catch (e) {
+      lastReport = '調査に失敗しました: ' + (e && e.message ? e.message : String(e));
+      out.textContent = lastReport;
+      out.hidden = false;
+      toast('調査に失敗しました');
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = '調査する';
+    }
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    if (!lastReport) { toast('先に調査してください'); return; }
+    await adapter.copyToClipboard(lastReport);
+    toast('結果をコピーしました');
+  });
 }
 
 function renderWarningsDirect(host, warnings, notation) {
