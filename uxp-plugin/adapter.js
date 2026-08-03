@@ -237,15 +237,25 @@ const adapter = {
     const lines = [];
     const say = (s) => lines.push(s);
 
+    /* JS自体が持っているもの。どのオブジェクトにも出るので読む価値がない。 */
+    const NOISE = new Set([
+      'constructor', 'apply', 'arguments', 'bind', 'call', 'caller', 'length',
+      'name', 'prototype', 'toString', 'valueOf', 'hasOwnProperty',
+      'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__proto__',
+      '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__'
+    ]);
+
     /* オブジェクトが実際に持っているメソッド名を出す。
-       APIの版差はここを見るのが一番早い。 */
-    const surfaceOf = (obj) => {
+       APIの版差はここを見るのが一番早い。
+       ただし name は Premiere 側の実データでもあるので、
+       クラスの静的側（関数）でだけ雑音として落とす。 */
+    const surfaceOf = (obj, keepDataNames) => {
       if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return [];
       const names = new Set();
       let cur = obj;
-      for (let depth = 0; cur && cur !== Object.prototype && depth < 4; depth++) {
+      for (let depth = 0; cur && cur !== Object.prototype && cur !== Function.prototype && depth < 4; depth++) {
         for (const k of Object.getOwnPropertyNames(cur)) {
-          if (k === 'constructor') continue;
+          if (NOISE.has(k) && !(keepDataNames && k === 'name')) continue;
           names.add(k);
         }
         cur = Object.getPrototypeOf(cur);
@@ -270,6 +280,44 @@ const adapter = {
       }
       return { ok: false, via: null, value: null };
     };
+
+    /* --- まずAPI全体を見る ---
+       クリップを辿る前に、そもそもどんなクラスと定数があるかを出す。
+       段落／ポイントの切り替えがあるなら、この一覧に痕跡が出るはず。 */
+    const KEY = /(boxText|box_text|pointText|point_text|areaText|textBox|paragraph|段落|ポイント|layerType|textType|TextLayer)/i;
+
+    say('══ premierepro が公開しているもの');
+    const pproNames = surfaceOf(ppro);
+    say('  ' + (pproNames.length ? pproNames.join(', ') : '(取得できませんでした)'));
+    const pproHits = pproNames.filter((n) => KEY.test(n));
+    say('  → 該当しそうな名前: ' + (pproHits.length ? pproHits.join(', ') : 'なし'));
+    say('');
+
+    if (ppro.Constants) {
+      const constNames = surfaceOf(ppro.Constants);
+      say('══ premierepro.Constants');
+      say('  ' + constNames.join(', '));
+      const constHits = constNames.filter((n) => KEY.test(n));
+      say('  → 該当しそうな名前: ' + (constHits.length ? constHits.join(', ') : 'なし'));
+      /* 該当した定数は中身まで出す */
+      for (const n of constHits) {
+        try { say(`    ${n} = ${JSON.stringify(ppro.Constants[n])}`); } catch (e) { /* 出せなくても続ける */ }
+      }
+      say('');
+    }
+
+    /* テキスト関連のクラスは、静的メソッドまで見ておく */
+    for (const cls of ['SourceTextValue', 'TextStyle', 'TextLayer', 'TextDocument', 'ComponentParam']) {
+      if (!ppro[cls]) continue;
+      say(`══ premierepro.${cls}`);
+      const statics = surfaceOf(ppro[cls]);
+      say('  静的: ' + (statics.length ? statics.join(', ') : '(なし)'));
+      if (ppro[cls].prototype) {
+        const protos = surfaceOf(ppro[cls].prototype, true);
+        say('  実体: ' + (protos.length ? protos.join(', ') : '(なし)'));
+      }
+      say('');
+    }
 
     const project = await ppro.Project.getActiveProject();
     if (!project) throw new Error('プロジェクトが開かれていません。');
@@ -349,7 +397,7 @@ const adapter = {
       const nm = await tryCall(it, ['name', 'getName'], []);
       say(`── クリップ ${i + 1}: ${nm.ok ? nm.value : '(名前不明)'}`);
       say('  TrackItem が持つもの:');
-      say('    ' + surfaceOf(it).join(', '));
+      say('    ' + surfaceOf(it, true).join(', '));
 
       const chainRes = await tryCall(it, ['getComponentChain'], []);
       if (!chainRes.ok) {
@@ -389,10 +437,10 @@ const adapter = {
           const valRes = await tryCall(prm, ['getStartValue', 'getValue'], []);
           if (!valRes.ok) { say('          値を取得できませんでした。'); continue; }
           const val = valRes.value;
-          say(`          値が持つもの: ${surfaceOf(val).join(', ')}`);
+          say(`          値が持つもの: ${surfaceOf(val, true).join(', ')}`);
           const styleRes = await tryCall(val, ['getTextStyle'], []);
           if (styleRes.ok) {
-            say(`          TextStyle が持つもの: ${surfaceOf(styleRes.value).join(', ')}`);
+            say(`          TextStyle が持つもの: ${surfaceOf(styleRes.value, true).join(', ')}`);
           }
         }
         if (params.length) say(`        パラメータ名: ${params.join(' / ')}`);
@@ -407,8 +455,7 @@ const adapter = {
       say('');
     }
 
-    /* --- 段落／ポイントの切り替え口があるかを機械的に探す --- */
-    const KEY = /(boxText|box_text|pointText|point_text|areaText|textBox|paragraph|段落|ポイント|layerType|textType)/i;
+    /* --- 段落／ポイントの切り替え口があるかを機械的に探す（KEY は冒頭で定義） --- */
     const hits = [];
     for (const d of dumped) {
       for (const c of d.components) {
