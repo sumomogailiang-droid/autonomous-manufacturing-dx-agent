@@ -416,10 +416,11 @@ const adapter = {
         if (!compRes.ok) continue;
         const comp = compRes.value;
         const mn = await tryCall(comp, ['getMatchName', 'matchName'], []);
-        const cn = await tryCall(comp, ['getComponentName', 'name'], []);
+        const cn = await tryCall(comp, ['getComponentName', 'name', 'getName', 'displayName'], []);
         const pcRes = await tryCall(comp, ['getParamCount'], []);
         const pc = pcRes.ok ? Number(pcRes.value) : 0;
         say(`    [${c}] ${cn.ok ? cn.value : '?'}  (matchName: ${mn.ok ? mn.value : '?'})  パラメータ${pc}件`);
+        if (c === 0) say(`        Component が持つもの: ${surfaceOf(comp, true).join(', ')}`);
 
         const params = [];
         for (let p = 0; p < pc; p++) {
@@ -434,9 +435,25 @@ const adapter = {
           const looksText = /text|テキスト|source ?text|ソース/i.test(label);
           if (!looksText) continue;
           say(`        ▸ テキストらしいパラメータ: ${label}`);
-          const valRes = await tryCall(prm, ['getStartValue', 'getValue'], []);
-          if (!valRes.ok) { say('          値を取得できませんでした。'); continue; }
-          const val = valRes.value;
+          say(`          ComponentParam が持つもの: ${surfaceOf(prm, true).join(', ')}`);
+
+          let val = null;
+          const valRes = await tryCall(prm, ['getStartValue', 'getValue', 'value'], []);
+          if (valRes.ok) {
+            val = valRes.value;
+            say(`          値の取得: ${valRes.via} で成功`);
+          } else {
+            /* Premiereは読み取りでも lockedAccess の中でないと通らないものがある。
+               素で失敗したときは、その中でもう一度試す。 */
+            try {
+              await project.lockedAccess(() => { val = prm.getStartValue(); });
+              if (val) say('          値の取得: lockedAccess 内の getStartValue() で成功');
+            } catch (e) {
+              errors.push('lockedAccess+getStartValue: ' + (e && e.message ? e.message : String(e)));
+            }
+          }
+          if (!val) { say('          値を取得できませんでした。'); continue; }
+
           say(`          値が持つもの: ${surfaceOf(val, true).join(', ')}`);
           const styleRes = await tryCall(val, ['getTextStyle'], []);
           if (styleRes.ok) {
@@ -735,13 +752,58 @@ const adapter = {
    * UXPでは navigator.clipboard が使えるため、Premiere内でもそのまま動く。
    */
   async copyToClipboard(text) {
+    /* 経路1: 標準のクリップボードAPI */
     try {
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
         return { ok: true, message: 'コピーしました' };
       }
-    } catch (e) { /* 下のフォールバックへ */ }
-    return { ok: false, message: 'コピーできませんでした。本文を選択してコピーしてください' };
+    } catch (e) { /* 次の経路へ */ }
+
+    /* 経路2: UXP のクリップボード。
+       UXPでは navigator.clipboard が無い版があるため、こちらも試す。
+       呼び方が版で違うので、通ったものを使う。 */
+    try {
+      const uxp = require('uxp');
+      const cb = uxp && uxp.clipboard;
+      if (cb) {
+        if (typeof cb.setContent === 'function') {
+          await cb.setContent({ 'text/plain': text });
+          return { ok: true, message: 'コピーしました' };
+        }
+        if (typeof cb.writeText === 'function') {
+          await cb.writeText(text);
+          return { ok: true, message: 'コピーしました' };
+        }
+      }
+    } catch (e) { /* 次の経路へ */ }
+
+    return { ok: false, message: 'コピーできませんでした。「ファイルに保存」を使ってください' };
+  },
+
+  /**
+   * テキストファイルを書き出す。保存先はユーザーが選ぶ。
+   *
+   * クリップボードは環境によって通らないことがある。
+   * 調査結果のように長い出力は、取り出せないと意味がないので、
+   * ファイルという確実な経路を必ず用意しておく。
+   *
+   * @returns {Promise<string>} 保存したパス
+   */
+  async writeTextFile(text, fileName) {
+    if (!this.isPremiere()) {
+      mockState.lastSrt = text;
+      return `(モック)/${fileName}`;
+    }
+
+    /* --- ここから Premiere API（未検証） --- */
+    const uxp = require('uxp');
+    const fs = uxp.storage.localFileSystem;
+    const file = await fs.getFileForSaving(fileName, { types: ['txt'] });
+    if (!file) throw new Error('保存先が選択されませんでした');
+    await file.write(text);
+    return file.nativePath || file.name;
+    /* --- ここまで Premiere API --- */
   },
 
   /** モック時の挿入履歴（テスト用） */

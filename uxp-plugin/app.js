@@ -774,12 +774,19 @@ function buildInspectCard(host) {
   const row = el('div', 'btn-row');
   const runBtn = el('button', 'btn btn-primary btn-sm', '調査する');
   const copyBtn = el('button', 'btn btn-sm', '結果をコピー');
-  for (const b of [runBtn, copyBtn]) attr(b, { type: 'button' });
-  add(row, runBtn, copyBtn);
+  const saveBtn = el('button', 'btn btn-sm', 'ファイルに保存');
+  const wrapBtn = el('button', 'btn btn-sm', '折り返す');
+  for (const b of [runBtn, copyBtn, saveBtn, wrapBtn]) attr(b, { type: 'button' });
+  add(row, runBtn, copyBtn, saveBtn, wrapBtn);
   card.appendChild(row);
 
-  const out = el('pre', 'inspect-out');
-  attr(out, { id: 'inspect-out' });
+  /*
+   * 結果は textarea に出す。pre だと環境によって選択できず、
+   * クリップボードも通らないと取り出す手段が無くなる。
+   * readonly にして、書き換えても中身が変わらないようにする。
+   */
+  const out = el('textarea', 'inspect-out');
+  attr(out, { id: 'inspect-out', readonly: 'readonly', rows: '14', spellcheck: 'false', wrap: 'off' });
   out.hidden = true;
   card.appendChild(out);
 
@@ -796,12 +803,12 @@ function buildInspectCard(host) {
         trackIndex: Number(trackSel.value)
       });
       lastReport = r.report || '';
-      out.textContent = lastReport;
+      out.value = lastReport;
       out.hidden = false;
       toast(r.ok ? '調査しました' : '調査できませんでした');
     } catch (e) {
       lastReport = '調査に失敗しました: ' + (e && e.message ? e.message : String(e));
-      out.textContent = lastReport;
+      out.value = lastReport;
       out.hidden = false;
       toast('調査に失敗しました');
     } finally {
@@ -812,8 +819,27 @@ function buildInspectCard(host) {
 
   copyBtn.addEventListener('click', async () => {
     if (!lastReport) { toast('先に調査してください'); return; }
-    await adapter.copyToClipboard(lastReport);
-    toast('結果をコピーしました');
+    /* まず選択しておく。クリップボードが通らなくても手でコピーできる。 */
+    try { out.focus(); out.select(); } catch (e) { /* 選択できなくても続ける */ }
+    const r = await adapter.copyToClipboard(lastReport);
+    toast(r && r.ok ? '結果をコピーしました' : '全選択しました。⌘Cでコピーしてください');
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    if (!lastReport) { toast('先に調査してください'); return; }
+    try {
+      const path = await adapter.writeTextFile(lastReport, 'premiere-inspect.txt');
+      toast('保存しました: ' + path);
+    } catch (e) {
+      toast('保存に失敗: ' + (e && e.message ? e.message : String(e)));
+    }
+  });
+
+  wrapBtn.addEventListener('click', () => {
+    const on = out.getAttribute('wrap') === 'off';
+    out.setAttribute('wrap', on ? 'soft' : 'off');
+    out.classList.toggle('is-wrapped', on);
+    wrapBtn.textContent = on ? '折り返しをやめる' : '折り返す';
   });
 }
 
