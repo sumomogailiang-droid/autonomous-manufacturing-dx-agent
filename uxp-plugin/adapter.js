@@ -284,7 +284,10 @@ const adapter = {
     /* --- まずAPI全体を見る ---
        クリップを辿る前に、そもそもどんなクラスと定数があるかを出す。
        段落／ポイントの切り替えがあるなら、この一覧に痕跡が出るはず。 */
-    const KEY = /(boxText|box_text|pointText|point_text|areaText|textBox|paragraph|段落|ポイント|layerType|textType|TextLayer)/i;
+    /* 段落／ポイントの切り替えを指しそうな名前。
+       「ポイント」単体は入れない。「アンカーポイント」に当たって
+       関係のないものが大量に候補として出る。 */
+    const KEY = /(boxText|box_text|pointText|point_text|areaText|area_text|textBox|text_box|paragraph|段落|ポイントテキスト|段落テキスト|layerType|textType|TextLayer|TextDocument)/i;
 
     say('══ premierepro が公開しているもの');
     const pproNames = surfaceOf(ppro);
@@ -326,11 +329,22 @@ const adapter = {
     let seq = null;
     let seqName = '';
     const seqList = await tryCall(project, ['getSequences', 'getSequenceList'], []);
-    if (seqList.ok && seqList.value && seqList.value.length) {
+
+    /* 名前が空なら、開いているシーケンスを使う。
+       一覧の先頭を黙って使ってはいけない。別のシーケンスを調べた結果を
+       目的のシーケンスの結果だと読み違える。 */
+    if (!wantName) {
+      seq = await project.getActiveSequence();
+      const n = seq && await tryCall(seq, ['name', 'getName'], []);
+      seqName = n && n.ok ? String(n.value) : '';
+      say('⚠ シーケンス名が空欄でした。開いているシーケンスを対象にしています。');
+      say('  別のシーケンスを調べたい場合は、名前を入力してから実行してください。');
+      say('');
+    } else if (seqList.ok && seqList.value && seqList.value.length) {
       for (const s of seqList.value) {
         const n = await tryCall(s, ['name', 'getName'], []);
         const nm = n.ok ? String(n.value) : '';
-        if (!wantName || nm === wantName) { seq = s; seqName = nm; break; }
+        if (nm === wantName) { seq = s; seqName = nm; break; }
       }
       if (!seq) {
         const all = [];
@@ -361,6 +375,9 @@ const adapter = {
     if (!seq) throw new Error('シーケンスを取得できませんでした。');
 
     say(`シーケンス : ${seqName || '(名前不明)'}`);
+    if (wantName && seqName && seqName !== wantName) {
+      say(`⚠ 指定「${wantName}」と違うシーケンスを見ています。結果は指定のものではありません。`);
+    }
     say(`対象トラック: V${trackIndex}`);
     say('');
 
@@ -392,17 +409,34 @@ const adapter = {
 
     /* --- 先頭数件の中身を書き出す --- */
     const dumped = [];
+    /* ソーステキストの値の中に見つかった候補。パラメータ名とは別に集める。 */
+    const valueHits = [];
+    /* 同じ構造のクリップを何度も書かない。
+       テロップは同じテンプレートから作るので中身がそっくりになり、
+       全部出すと読むべき差分が埋もれる。 */
+    const seenShape = new Map();
+    let shownTrackItemSurface = false;
+
     for (let i = 0; i < Math.min(items.length, maxItems); i++) {
       const it = items[i];
       const nm = await tryCall(it, ['name', 'getName'], []);
-      say(`── クリップ ${i + 1}: ${nm.ok ? nm.value : '(名前不明)'}`);
-      say('  TrackItem が持つもの:');
-      say('    ' + surfaceOf(it, true).join(', '));
+      /* いったん溜めてから、既出の構造かどうかで出し方を決める */
+      const buf = [];
+      const say = (s) => buf.push(s);
+
+      if (!shownTrackItemSurface) {
+        say('  TrackItem が持つもの:');
+        say('    ' + surfaceOf(it, true).join(', '));
+        shownTrackItemSurface = true;
+      }
 
       const chainRes = await tryCall(it, ['getComponentChain'], []);
       if (!chainRes.ok) {
-        say('  ⚠ コンポーネントチェーンを取得できませんでした。');
-        say('');
+        /* ここで抜けると溜めた分が捨てられるので、直接書き出す */
+        lines.push(`── クリップ ${i + 1}: ${nm.ok ? nm.value : '(名前不明)'}`);
+        for (const l of buf) lines.push(l);
+        lines.push('  ⚠ コンポーネントチェーンを取得できませんでした。');
+        lines.push('');
         continue;
       }
       const chain = chainRes.value;
@@ -444,27 +478,67 @@ const adapter = {
             say(`          値の取得: ${valRes.via} で成功`);
           } else {
             /* Premiereは読み取りでも lockedAccess の中でないと通らないものがある。
-               素で失敗したときは、その中でもう一度試す。 */
+               素で失敗したときは、その中でもう一度試す。
+
+               ロックの中で await はできないので、Promise だけ受け取って外で解く。
+               ここで解かずに渡すと Promise 自体を調べてしまい、
+               then / catch / finally しか見えない。 */
+            let pending = null;
             try {
-              await project.lockedAccess(() => { val = prm.getStartValue(); });
+              await project.lockedAccess(() => { pending = prm.getStartValue(); });
+              val = await pending;
               if (val) say('          値の取得: lockedAccess 内の getStartValue() で成功');
             } catch (e) {
               errors.push('lockedAccess+getStartValue: ' + (e && e.message ? e.message : String(e)));
             }
           }
-          if (!val) { say('          値を取得できませんでした。'); continue; }
+          if (val === null || val === undefined) { say('          値を取得できませんでした。'); continue; }
 
-          say(`          値が持つもの: ${surfaceOf(val, true).join(', ')}`);
-          const styleRes = await tryCall(val, ['getTextStyle'], []);
-          if (styleRes.ok) {
-            say(`          TextStyle が持つもの: ${surfaceOf(styleRes.value, true).join(', ')}`);
+          /* 値そのものを、形を変えて何通りか出す。
+             どれか1つでも中身が見えれば、段落／ポイントの持ち方が分かる。 */
+          say(`          値の型: ${typeof val}`);
+          say(`          値が持つもの: ${surfaceOf(val, true).join(', ') || '(なし)'}`);
+          try {
+            const keys = Object.keys(val).concat(surfaceOf(val, true));
+            if (keys.length) say(`          列挙できるキー: ${[...new Set(keys)].join(', ')}`);
+            /* 段落／ポイントの持ち方は、パラメータ名ではなく
+               この値の中にある可能性が高い。ここも候補として拾う。 */
+            for (const k of new Set(keys)) {
+              if (KEY.test(k)) valueHits.push(`ソーステキストの値 → ${k}`);
+            }
+          } catch (e) { /* 列挙できなくても続ける */ }
+          try {
+            const s = String(val);
+            say(`          文字列化: ${s.length > 600 ? s.slice(0, 600) + ' …(以下略)' : s}`);
+          } catch (e) { /* 出せなくても続ける */ }
+          try {
+            const j = JSON.stringify(val);
+            if (j && j !== '{}') say(`          JSON: ${j.length > 900 ? j.slice(0, 900) + ' …(以下略)' : j}`);
+          } catch (e) { /* 循環参照などは出せない */ }
+
+          for (const m of ['getText', 'getTextStyle', 'getSegments', 'getTextSegments']) {
+            const r = await tryCall(val, [m], []);
+            if (!r.ok) continue;
+            const inner = await r.value;
+            say(`          ${m}() → ${surfaceOf(inner, true).join(', ') || String(inner).slice(0, 200)}`);
           }
         }
         if (params.length) say(`        パラメータ名: ${params.join(' / ')}`);
         comps.push({ index: c, matchName: mn.value || null, name: cn.value || null, params });
       }
       dumped.push({ index: i, name: nm.value || null, components: comps });
-      say('');
+
+      /* 構造の指紋。コンポーネントとパラメータ名がすべて同じなら同じ形。 */
+      const shape = comps.map((c) => c.matchName + ':' + c.params.join(',')).join('|');
+      const label = `── クリップ ${i + 1}: ${nm.ok ? nm.value : '(名前不明)'}`;
+      if (seenShape.has(shape)) {
+        lines.push(`${label} — 構造はクリップ${seenShape.get(shape)}と同じ（内容を省略）`);
+      } else {
+        seenShape.set(shape, i + 1);
+        lines.push(label);
+        for (const l of buf) lines.push(l);
+      }
+      lines.push('');
     }
 
     if (items.length > maxItems) {
@@ -479,9 +553,11 @@ const adapter = {
         for (const p of c.params) if (KEY.test(p)) hits.push(`${c.name || c.matchName} → ${p}`);
       }
     }
+    for (const v of new Set(valueHits)) hits.push(v);
+
     say('── 段落／ポイントの切り替えらしい項目');
     if (hits.length) {
-      for (const h of hits) say('  ' + h);
+      for (const h of new Set(hits)) say('  ' + h);
       say('');
       say('候補が見つかりました。この出力をチャットへ貼ってください。変換の実装に進めます。');
     } else {
