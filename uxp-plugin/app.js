@@ -653,7 +653,12 @@ function buildTelopPanel() {
   detectBtn.addEventListener('click', async () => {
     try {
       const info = await adapter.getSequenceFrameRate();
-      if (!info) { toast('シーケンスからfpsを取得できませんでした'); return; }
+      if (!info || !info.fps) {
+        rateNote.textContent = 'シーケンスから取得できませんでした。手で選んでください。' +
+          (info && info.error ? '\n' + info.error : '');
+        toast('取得できませんでした');
+        return;
+      }
       const resolved = TC.resolveRate(info.fps, info.dropFrame);
       const key = Object.keys(TC.RATES).find((k) => TC.RATES[k].label === resolved.label);
       if (key) rateSel.value = key;
@@ -915,19 +920,42 @@ function buildDirectionPanel() {
   card.appendChild(el('h2', null, '演出マーカー'));
 
   /* 範囲 */
+  /*
+   * エラーはここに出す。パネルが狭いと下の出力欄が画面外へ出てしまい、
+   * 何が起きたのか分からないまま「動かない」になる。
+   */
+  const err = el('div', 'alert');
+  attr(err, { id: 'dir-error' });
+  err.hidden = true;
+  card.appendChild(err);
+
   const rangeRow = el('div', 'inline');
   const inLabel = el('label', 'field');
   add(inLabel, el('span', null, '開始タイムコード'));
   const inTc = el('input');
-  attr(inTc, { type: 'text', id: 'dir-in', placeholder: '00;03;10;03' });
+  attr(inTc, { type: 'text', id: 'dir-in', placeholder: '例 00;03;10;03' });
   inLabel.appendChild(inTc);
   const outLabel = el('label', 'field');
   add(outLabel, el('span', null, '終了タイムコード'));
   const outTc = el('input');
-  attr(outTc, { type: 'text', id: 'dir-out', placeholder: '00;06;10;52' });
+  attr(outTc, { type: 'text', id: 'dir-out', placeholder: '例 00;06;10;52' });
   outLabel.appendChild(outTc);
   add(rangeRow, inLabel, outLabel);
   card.appendChild(rangeRow);
+
+  /* 手で打たなくても埋められるようにする。薄い文字は入力値ではないので、
+     プレースホルダを頼りに空のまま実行されるのを防ぐ。 */
+  const grabRow = el('div', 'btn-row');
+  const grabIn = el('button', 'btn btn-sm', '再生ヘッドを開始に');
+  const grabOut = el('button', 'btn btn-sm', '再生ヘッドを終了に');
+  for (const b of [grabIn, grabOut]) attr(b, { type: 'button' });
+  add(grabRow, grabIn, grabOut);
+  card.appendChild(grabRow);
+
+  const grabNote = el('p', 'stat');
+  grabNote.textContent =
+    '入力欄の薄い文字は例です。入力値ではありません。空のままだと計算できません。';
+  card.appendChild(grabNote);
 
   /* フレームレート */
   const rateRow = el('div', 'inline');
@@ -1012,11 +1040,35 @@ function buildDirectionPanel() {
 
   const rateOf = () => TC.RATES[rateSel.value] || TC.RATES['29.97'];
 
+  function showError(msg) {
+    err.textContent = msg;
+    err.hidden = false;
+  }
+  function clearError() {
+    err.textContent = '';
+    err.hidden = true;
+  }
+
   function slots() {
     const rate = rateOf();
-    const startFrame = TC.timecodeToFrames(inTc.value.trim(), rate);
-    const endFrame = TC.timecodeToFrames(outTc.value.trim(), rate);
-    if (!(endFrame > startFrame)) throw new Error('範囲が不正です。開始より後の終了を入れてください。');
+    const rawIn = inTc.value.trim();
+    const rawOut = outTc.value.trim();
+
+    /* 空欄をそのまま通すと 0 になり「範囲が不正」としか言えなくなる。
+       どちらが空なのかを名指しする。 */
+    if (!rawIn && !rawOut) {
+      throw new Error('開始と終了のタイムコードが両方とも空です。入力するか「再生ヘッドを開始に」で埋めてください。');
+    }
+    if (!rawIn) throw new Error('開始タイムコードが空です。');
+    if (!rawOut) throw new Error('終了タイムコードが空です。');
+
+    const startFrame = TC.timecodeToFrames(rawIn, rate);
+    const endFrame = TC.timecodeToFrames(rawOut, rate);
+    if (!isFinite(startFrame)) throw new Error(`開始タイムコードを読み取れません: ${rawIn}`);
+    if (!isFinite(endFrame)) throw new Error(`終了タイムコードを読み取れません: ${rawOut}`);
+    if (endFrame <= startFrame) {
+      throw new Error(`終了が開始より後になっていません（開始 ${rawIn} / 終了 ${rawOut}）。`);
+    }
     const iv = Number(ivIn.value) || 6;
     const step = Math.round(iv * rate.exact);
     const points = [];
@@ -1029,19 +1081,39 @@ function buildDirectionPanel() {
   detectBtn.addEventListener('click', async () => {
     try {
       const info = await adapter.getSequenceFrameRate();
-      if (!info) { rateNote.textContent = 'シーケンスから取得できませんでした。手で選んでください。'; return; }
+      if (!info || !info.fps) {
+        rateNote.textContent = 'シーケンスから取得できませんでした。手で選んでください。';
+        if (info && info.error) showError('fpsの取得に失敗しました。\n' + info.error);
+        return;
+      }
       const resolved = TC.resolveRate(info.fps, info.dropFrame);
       const key = Object.keys(TC.RATES).find((k) => TC.RATES[k].label === resolved.label);
       if (key) rateSel.value = key;
       rateNote.textContent = `シーケンスから取得: ${resolved.label}`;
+      clearError();
     } catch (e) {
-      rateNote.textContent = '取得に失敗しました: ' + (e && e.message ? e.message : String(e));
+      showError('fpsの取得に失敗しました: ' + (e && e.message ? e.message : String(e)));
     }
   });
+
+  async function grabPlayhead(target) {
+    try {
+      const tc = await adapter.getPlayheadTimecode();
+      if (!tc) { showError('再生位置を取得できませんでした。'); return; }
+      target.value = tc;
+      clearError();
+      toast('再生位置を入れました: ' + tc);
+    } catch (e) {
+      showError('再生位置を取得できませんでした: ' + (e && e.message ? e.message : String(e)));
+    }
+  }
+  grabIn.addEventListener('click', () => grabPlayhead(inTc));
+  grabOut.addEventListener('click', () => grabPlayhead(outTc));
 
   dryBtn.addEventListener('click', () => {
     try {
       const s = slots();
+      clearError();
       const lines = [
         `${s.points.length}箇所（${s.iv}秒ごと / ${rateOf().label}）`,
         '',
@@ -1050,7 +1122,9 @@ function buildDirectionPanel() {
       out.textContent = lines.join('\n');
       toast(`${s.points.length}箇所を計算しました`);
     } catch (e) {
-      out.textContent = 'エラー: ' + (e && e.message ? e.message : String(e));
+      const msg = e && e.message ? e.message : String(e);
+      showError(msg);
+      out.textContent = '';
       toast('計算できませんでした');
     }
   });
@@ -1059,8 +1133,9 @@ function buildDirectionPanel() {
     let s;
     try {
       s = slots();
+      clearError();
     } catch (e) {
-      out.textContent = 'エラー: ' + (e && e.message ? e.message : String(e));
+      showError(e && e.message ? e.message : String(e));
       toast('計算できませんでした');
       return;
     }

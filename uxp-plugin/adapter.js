@@ -468,6 +468,29 @@ const adapter = {
     say(`対象トラック: V${trackIndex}`);
     say('');
 
+    /* シーケンス自体の口も出す。fpsや尺の取り方がここで分かる。 */
+    say('══ Sequence が持つもの');
+    say('  ' + surfaceOf(seq, true).join(', '));
+    try {
+      const st = await seq.getSettings();
+      if (st) {
+        say('══ getSettings() が持つもの');
+        say('  ' + [...new Set(Object.keys(st).concat(surfaceOf(st, true)))].join(', '));
+        for (const k of ['videoFrameRate', 'videoDisplayFormat', 'videoFrameWidth', 'videoFrameHeight']) {
+          if (st[k] === undefined) continue;
+          let shown;
+          try { shown = JSON.stringify(st[k]); } catch (e) { shown = String(st[k]); }
+          say(`    ${k} = ${shown}  (型 ${typeof st[k]})`);
+        }
+      } else {
+        say('══ getSettings() は null を返しました');
+      }
+    } catch (e) {
+      say('══ getSettings() でエラー: ' + (e && e.message ? e.message : String(e)));
+    }
+    say('');
+    say('');
+
     /* --- トラックとクリップ --- */
     const track = await seq.getVideoTrack(trackIndex - 1);
     if (!track) throw new Error(`V${trackIndex} が存在しません。`);
@@ -751,27 +774,60 @@ const adapter = {
 
     let fps = null;
     let dropFrame = false;
+    /* どの経路を試して何が返ったかを残す。
+       「取得できませんでした」だけでは直しようがないため。 */
+    const tried = [];
 
-    /* 経路1: シーケンス設定から取る */
+    /* 値の形が版で違う。1フレームのticksで来ることも、fpsそのもので来ることもある。 */
+    const toFps = (v, where) => {
+      if (v === null || v === undefined) { tried.push(`${where}: なし`); return null; }
+      const raw = (typeof v === 'object')
+        ? (v.ticksPerFrame ?? v.ticks ?? v.value ?? v.seconds ?? null)
+        : v;
+      const n = Number(raw);
+      if (!isFinite(n) || n <= 0) { tried.push(`${where}: 読めない値 ${JSON.stringify(raw)}`); return null; }
+      /* ticks なら大きい数、fps ならせいぜい数百 */
+      const asFps = n > 10000 ? TICKS_PER_SECOND / n : n;
+      if (!isFinite(asFps) || asFps <= 0 || asFps > 1000) {
+        tried.push(`${where}: 範囲外 ${asFps}`);
+        return null;
+      }
+      tried.push(`${where}: ${asFps}`);
+      return asFps;
+    };
+
+    /* 経路1: シーケンス設定 */
     try {
       const settings = await seq.getSettings();
       if (settings) {
-        const tb = Number(settings.videoFrameRate?.ticks ?? settings.videoFrameRate);
-        if (isFinite(tb) && tb > 0) fps = TICKS_PER_SECOND / tb;
-        dropFrame = !!settings.videoDisplayFormat &&
-          String(settings.videoDisplayFormat).toLowerCase().includes('drop');
+        fps = toFps(settings.videoFrameRate, 'getSettings().videoFrameRate');
+        const disp = settings.videoDisplayFormat;
+        dropFrame = disp !== undefined && String(disp).toLowerCase().includes('drop');
+      } else {
+        tried.push('getSettings(): null');
       }
-    } catch (e) { /* 経路2へ */ }
+    } catch (e) {
+      tried.push('getSettings(): ' + (e && e.message ? e.message : String(e)));
+    }
 
     /* 経路2: timebase を直接見る */
     if (!fps) {
-      try {
-        const tb = Number(await seq.timebase);
-        if (isFinite(tb) && tb > 0) fps = TICKS_PER_SECOND / tb;
-      } catch (e) { /* 取得できず */ }
+      try { fps = toFps(await seq.timebase, 'timebase'); }
+      catch (e) { tried.push('timebase: ' + (e && e.message ? e.message : String(e))); }
     }
 
-    if (!fps || !isFinite(fps)) return null;
+    /* 経路3: メソッド形式で持っている版 */
+    if (!fps) {
+      for (const m of ['getVideoFrameRate', 'getFrameRate', 'getTimebase']) {
+        if (typeof seq[m] !== 'function') continue;
+        try { fps = toFps(await seq[m](), m + '()'); if (fps) break; }
+        catch (e) { tried.push(`${m}(): ` + (e && e.message ? e.message : String(e))); }
+      }
+    }
+
+    if (!fps || !isFinite(fps)) {
+      return { fps: null, dropFrame: false, error: '試した経路:\n- ' + tried.join('\n- ') };
+    }
     return { fps, dropFrame };
     /* --- ここまで Premiere API --- */
   },
