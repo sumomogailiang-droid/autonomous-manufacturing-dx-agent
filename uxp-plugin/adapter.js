@@ -55,6 +55,40 @@ const mockState = {
 };
 
 /* ------------------------------------------------------------------ */
+/* APIの表面を調べる道具                                                */
+/* ------------------------------------------------------------------ */
+
+/* JS自体が持っているもの。どのオブジェクトにも出るので読む価値がない。 */
+const NOISE = new Set([
+  'constructor', 'apply', 'arguments', 'bind', 'call', 'caller', 'length',
+  'name', 'prototype', 'toString', 'valueOf', 'hasOwnProperty',
+  'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__proto__',
+  '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__'
+]);
+
+/*
+ * オブジェクトが実際に持っているメソッド名を返す。
+ * UXPのAPIは版差が大きく、あるはずの定数が無いことがある。
+ * 失敗したときにこれを一緒に出しておくと、次に何を試すかが決まる。
+ *
+ * name は Premiere 側の実データでもあるので、
+ * クラスの静的側（関数）でだけ雑音として落とす。
+ */
+function surfaceOf(obj, keepDataNames) {
+  if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return [];
+  const names = new Set();
+  let cur = obj;
+  for (let depth = 0; cur && cur !== Object.prototype && cur !== Function.prototype && depth < 4; depth++) {
+    for (const k of Object.getOwnPropertyNames(cur)) {
+      if (NOISE.has(k) && !(keepDataNames && k === 'name')) continue;
+      names.add(k);
+    }
+    cur = Object.getPrototypeOf(cur);
+  }
+  return [...names].sort();
+}
+
+/* ------------------------------------------------------------------ */
 /* 公開API                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -246,7 +280,49 @@ const adapter = {
     const markers = await ppro.Markers.getMarkers(seq);
     if (!markers) return { ok: false, placed: 0, message: 'マーカーを取得できませんでした' };
 
-    /* 1つの取り消し単位にまとめる。31個が個別に残ると取り消しが面倒になる。 */
+    /*
+     * マーカー種別の渡し方が版で違う。
+     * この環境の Constants には MarkerType が無く（あるのは MarkerColor）、
+     * 定数を決め打ちすると全件が「Cannot read properties of undefined」で落ちる。
+     *
+     * そこで通る形を1回だけ探し、以降はそれを使い回す。
+     * 全件で総当たりすると、失敗が件数分だけ積み上がって遅くなる。
+     */
+    const typeCandidates = [];
+    const MT = ppro.Constants && ppro.Constants.MarkerType;
+    if (MT && MT.COMMENT !== undefined) {
+      typeCandidates.push({ label: 'Constants.MarkerType.COMMENT', value: MT.COMMENT });
+    }
+    typeCandidates.push({ label: '種別を省略', value: undefined });
+    typeCandidates.push({ label: '"Comment"', value: 'Comment' });
+    typeCandidates.push({ label: '"comment"', value: 'comment' });
+    typeCandidates.push({ label: '0', value: 0 });
+
+    let chosen = null;
+    const attempts = [];
+
+    const makeAction = (name, comment, time) => {
+      const build = (c) => (c.value === undefined
+        ? markers.createAddMarkerAction(name, comment, time)
+        : markers.createAddMarkerAction(name, comment, time, c.value));
+
+      if (chosen) return build(chosen);
+
+      let lastErr = null;
+      for (const c of typeCandidates) {
+        try {
+          const a = build(c);
+          if (a) { chosen = c; return a; }
+          attempts.push(`${c.label}: 何も返らなかった`);
+        } catch (e) {
+          lastErr = e;
+          attempts.push(`${c.label}: ${e && e.message ? e.message : String(e)}`);
+        }
+      }
+      throw lastErr || new Error('マーカーの作り方が分かりませんでした');
+    };
+
+    /* 1つの取り消し単位にまとめる。件数分が個別に残ると取り消しが面倒になる。 */
     let placed = 0;
     const errors = [];
     await project.lockedAccess(() => {
@@ -255,26 +331,43 @@ const adapter = {
           try {
             const ticks = String(Math.round((p.frame / rate.exact) * TICKS_PER_SECOND));
             const t = ppro.TickTime.createWithTicks(ticks);
-            tx.addAction(markers.createAddMarkerAction(
-              `${label}${p.no}`,
-              o.comment || '',
-              t,
-              ppro.Constants.MarkerType.COMMENT
-            ));
+            tx.addAction(makeAction(`${label}${p.no}`, o.comment || '', t));
             placed++;
           } catch (e) {
             errors.push(`${label}${p.no}: ${e && e.message ? e.message : String(e)}`);
+            /* 1件目で全候補が落ちたなら、残りも落ちる。件数分待たせない。 */
+            if (!chosen) break;
           }
         }
       }, `編集アシスタント: ${label}マーカー ${points.length}個`);
     });
 
+    if (placed === points.length) {
+      return {
+        ok: true, placed,
+        message: `マーカーを${placed}個 打ちました（${chosen ? chosen.label : '既定'}）。` +
+                 '取り消しは1回で戻せます。'
+      };
+    }
+
+    if (placed === 0) {
+      /* 何が使えるのかを一緒に返す。「打てませんでした」だけでは直しようがない。 */
+      return {
+        ok: false, placed: 0,
+        message:
+          'マーカーを打てませんでした。\n\n' +
+          '試した渡し方:\n- ' + [...new Set(attempts)].join('\n- ') + '\n\n' +
+          'Markers が持つもの:\n  ' + surfaceOf(markers, true).join(', ') + '\n\n' +
+          'Constants にあるキー:\n  ' +
+          (ppro.Constants ? surfaceOf(ppro.Constants).join(', ') : '(Constants なし)') +
+          '\n\nこの内容をそのままチャットへ貼ってください。'
+      };
+    }
+
     return {
-      ok: placed > 0,
-      placed,
-      message: placed === points.length
-        ? `マーカーを${placed}個 打ちました。取り消しは1回で戻せます。`
-        : `${points.length}個中 ${placed}個を打ちました。\n打てなかったもの:\n- ${errors.join('\n- ')}`
+      ok: true, placed,
+      message: `${points.length}個中 ${placed}個を打ちました。\n打てなかったもの:\n- ` +
+               errors.slice(0, 10).join('\n- ')
     };
     /* --- ここまで Premiere API --- */
   },
@@ -323,32 +416,6 @@ const adapter = {
     const errors = [];
     const lines = [];
     const say = (s) => lines.push(s);
-
-    /* JS自体が持っているもの。どのオブジェクトにも出るので読む価値がない。 */
-    const NOISE = new Set([
-      'constructor', 'apply', 'arguments', 'bind', 'call', 'caller', 'length',
-      'name', 'prototype', 'toString', 'valueOf', 'hasOwnProperty',
-      'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__proto__',
-      '__defineGetter__', '__defineSetter__', '__lookupGetter__', '__lookupSetter__'
-    ]);
-
-    /* オブジェクトが実際に持っているメソッド名を出す。
-       APIの版差はここを見るのが一番早い。
-       ただし name は Premiere 側の実データでもあるので、
-       クラスの静的側（関数）でだけ雑音として落とす。 */
-    const surfaceOf = (obj, keepDataNames) => {
-      if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return [];
-      const names = new Set();
-      let cur = obj;
-      for (let depth = 0; cur && cur !== Object.prototype && cur !== Function.prototype && depth < 4; depth++) {
-        for (const k of Object.getOwnPropertyNames(cur)) {
-          if (NOISE.has(k) && !(keepDataNames && k === 'name')) continue;
-          names.add(k);
-        }
-        cur = Object.getPrototypeOf(cur);
-      }
-      return [...names].sort();
-    };
 
     /* 呼び方が版で違うので、候補を順に試して通ったものを使う */
     const tryCall = async (obj, names, args) => {
