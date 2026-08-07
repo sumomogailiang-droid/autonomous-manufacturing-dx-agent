@@ -1002,6 +1002,23 @@ function buildDirectionPanel() {
     '共通マニュアルは6秒と10秒が衝突しており、案件側が優先されます。';
   card.appendChild(ivNote);
 
+  /*
+   * 文字起こし（任意）。
+   *
+   * 入れておくと、各マーカーのコメントへ「その位置で何を話しているか」が入る。
+   * マーカーパネルがそのまま作業リストになり、強調テロップの文言を考えるときに
+   * タイムラインをスクラブしなくて済む。
+   */
+  const srcLabel = el('label', 'field');
+  add(srcLabel, el('span', null, '文字起こし（任意・入れるとマーカーに発言が入ります）'));
+  const srcIn = el('textarea');
+  attr(srcIn, {
+    id: 'dir-source', rows: '4', spellcheck: 'false',
+    placeholder: 'SRT / VTT / 00:03:10,030 --> 00:03:17,274 形式をそのまま貼れます'
+  });
+  srcLabel.appendChild(srcIn);
+  card.appendChild(srcLabel);
+
   /* ボタン */
   const row = el('div', 'btn-row');
   const dryBtn = el('button', 'btn btn-primary btn-sm', '位置を計算（打たない）');
@@ -1071,11 +1088,35 @@ function buildDirectionPanel() {
     }
     const iv = Number(ivIn.value) || 6;
     const step = Math.round(iv * rate.exact);
+
+    /* 文字起こしがあれば、各スロットの区間にかかる発言を拾う。
+       話者ラベルは落とす。マーカーに焼き込む意味がない。 */
+    let cues = [];
+    const raw = srcIn.value.trim();
+    if (raw) {
+      const blocks = parseSubtitles(raw);
+      const parsed = blocks.length ? blocks : parseTimedText(raw);
+      cues = (parsed || []).map((b) => ({
+        inFrame: TC.secondsToFrames(T.tcToSeconds(b.start), rate),
+        outFrame: TC.secondsToFrames(T.tcToSeconds(b.end || b.start), rate),
+        text: String(b.text || '').replace(/\s*\n\s*/g, ' ')
+          .replace(/^[^\s:：]{1,20}\s*[:：]\s*/, '').trim()
+      })).filter((c) => c.text);
+    }
+
     const points = [];
     for (let f = startFrame, i = 1; f < endFrame; f += step, i++) {
-      points.push({ no: i, frame: f, tc: TC.framesToTimecode(f, rate) });
+      const end = Math.min(f + step, endFrame);
+      let comment = '';
+      if (cues.length) {
+        const hit = cues.filter((c) => c.inFrame < end && c.outFrame > f).map((c) => c.text);
+        comment = hit.join(' ');
+        /* 長いとマーカーパネルで読めない。頭だけ残す。 */
+        if ([...comment].length > 120) comment = [...comment].slice(0, 120).join('') + '…';
+      }
+      points.push({ no: i, frame: f, tc: TC.framesToTimecode(f, rate), comment });
     }
-    return { rate, startFrame, endFrame, iv, points };
+    return { rate, startFrame, endFrame, iv, points, hasSource: cues.length > 0 };
   }
 
   detectBtn.addEventListener('click', async () => {
@@ -1115,9 +1156,11 @@ function buildDirectionPanel() {
       const s = slots();
       clearError();
       const lines = [
-        `${s.points.length}箇所（${s.iv}秒ごと / ${rateOf().label}）`,
+        `${s.points.length}箇所（${s.iv}秒ごと / ${rateOf().label}）` +
+          (s.hasSource ? ' / 文字起こしあり' : ' / 文字起こしなし（コメントは共通文）'),
         '',
-        ...s.points.map((p) => `${lbIn.value || '演出'}${p.no}\t${p.tc}`)
+        ...s.points.map((p) =>
+          `${lbIn.value || '演出'}${p.no}\t${p.tc}` + (p.comment ? '\t' + p.comment : ''))
       ];
       out.textContent = lines.join('\n');
       toast(`${s.points.length}箇所を計算しました`);
@@ -1143,11 +1186,10 @@ function buildDirectionPanel() {
     runBtn.textContent = '打っています…';
     try {
       const r = await adapter.addDirectionMarkers({
-        startFrame: s.startFrame,
-        endFrame: s.endFrame,
-        intervalSec: s.iv,
+        points: s.points,
         rate: s.rate,
         label: lbIn.value || '演出',
+        /* 文字起こしが無いときの共通文。ルールを毎回思い出せるようにしておく。 */
         comment: '案件マニュアル: 演出はデザインテロップ・SE・画角変化をセット'
       });
       out.textContent = r.message;

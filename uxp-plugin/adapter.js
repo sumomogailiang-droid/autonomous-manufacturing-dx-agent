@@ -249,20 +249,17 @@ const adapter = {
     const o = opts || {};
     const rate = o.rate;
     if (!rate || !rate.exact) throw new Error('フレームレートが指定されていません。');
-    const step = Math.round(o.intervalSec * rate.exact);
-    if (!(step > 0)) throw new Error('間隔が不正です: ' + o.intervalSec);
-    if (!(o.endFrame > o.startFrame)) throw new Error('範囲が不正です。');
 
-    /* 打つ位置を先に全部決める。途中で計算しない（ずれの原因になる） */
-    const points = [];
-    for (let f = o.startFrame, i = 1; f < o.endFrame; f += step, i++) {
-      points.push({ no: i, frame: f });
-    }
+    /* 位置は呼び出し側が決めて渡す。
+       打つ前に画面へ出した一覧と、実際に打つ位置を必ず同じものにするため。
+       ここでも計算すると、片方だけ直したときに食い違う。 */
+    const points = Array.isArray(o.points) ? o.points : [];
+    if (!points.length) throw new Error('打つ位置がありません。');
     const label = o.label || '演出';
 
     if (!this.isPremiere()) {
       for (const p of points) {
-        mockState.inserted.push({ marker: `${label}${p.no}`, at: p.frame });
+        mockState.inserted.push({ marker: `${label}${p.no}`, at: p.frame, comment: p.comment || '' });
       }
       return {
         ok: true, placed: points.length,
@@ -282,18 +279,19 @@ const adapter = {
 
     /*
      * マーカー種別の渡し方が版で違う。
-     * この環境の Constants には MarkerType が無く（あるのは MarkerColor）、
+     * Premiere 26 の Constants には MarkerType が無く（あるのは MarkerColor）、
      * 定数を決め打ちすると全件が「Cannot read properties of undefined」で落ちる。
      *
-     * そこで通る形を1回だけ探し、以降はそれを使い回す。
-     * 全件で総当たりすると、失敗が件数分だけ積み上がって遅くなる。
+     * 実機で通ったのは「種別を省略した3引数」だったので、それを先頭に置く。
+     * 他の形も残してあるのは、別の版で動かしたときの保険。
+     * 通った形を1回だけ決めて使い回す。全件で総当たりすると失敗が積み上がる。
      */
     const typeCandidates = [];
+    typeCandidates.push({ label: '種別を省略', value: undefined });
     const MT = ppro.Constants && ppro.Constants.MarkerType;
     if (MT && MT.COMMENT !== undefined) {
       typeCandidates.push({ label: 'Constants.MarkerType.COMMENT', value: MT.COMMENT });
     }
-    typeCandidates.push({ label: '種別を省略', value: undefined });
     typeCandidates.push({ label: '"Comment"', value: 'Comment' });
     typeCandidates.push({ label: '"comment"', value: 'comment' });
     typeCandidates.push({ label: '0', value: 0 });
@@ -331,7 +329,9 @@ const adapter = {
           try {
             const ticks = String(Math.round((p.frame / rate.exact) * TICKS_PER_SECOND));
             const t = ppro.TickTime.createWithTicks(ticks);
-            tx.addAction(makeAction(`${label}${p.no}`, o.comment || '', t));
+            /* コメントは位置ごとに違う。その場面で何を話しているかを入れておくと、
+               マーカーパネルがそのまま作業リストになる。 */
+            tx.addAction(makeAction(`${label}${p.no}`, p.comment || o.comment || '', t));
             placed++;
           } catch (e) {
             errors.push(`${label}${p.no}: ${e && e.message ? e.message : String(e)}`);
