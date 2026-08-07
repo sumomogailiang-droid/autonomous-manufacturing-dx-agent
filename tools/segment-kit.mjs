@@ -348,7 +348,70 @@ function projectCutNote() {
   return '> 登録済み案件マニュアルにカット対象の明記が見つかりません。project-manual で確認してください。';
 }
 
-function cmdProduce(srtPath, inTC, outTC, outDir, baselinePath, rate) {
+/*
+ * 演出スロット。
+ *
+ * 案件マニュアル（CAMPチャンネル）の「絶対守るルール」:
+ *   演出は6秒に1回入れる（演出＝強調テロップ、並列表記、画像挿入など）
+ *
+ * 共通マニュアルには6秒と10秒の両方の記述があり未決定のままだが、
+ * 案件マニュアルが共通マニュアルより優先されるため、案件側の6秒を使う。
+ * 間隔は --interval で変えられる（案件が変われば値も変わるため）。
+ *
+ * ここで出すのは「どこに演出が要るか」という位置だけ。
+ * 何を入れるか（強調する発言・短い文言・SEの選定）は判断が要るので決めない。
+ */
+function directionSlots(cues, inF, outF, rate, intervalSec) {
+  const step = tc.secondsToFrames(intervalSec, rate);
+  const slots = [];
+  for (let f = inF, i = 1; f < outF; f += step, i++) {
+    const end = Math.min(f + step, outF);
+    slots.push({
+      no: i,
+      inFrame: f,
+      outFrame: end,
+      cues: cues.filter((c) => c.inFrame < end && c.outFrame > f)
+    });
+  }
+  return slots;
+}
+
+function writeDirectionMd(path, slots, rate, intervalSec, maxChars) {
+  const L = ['# 演出の配置スロット（工程8）', ''];
+  L.push(`> 案件マニュアル: 演出は**${intervalSec}秒に1回**入れる`);
+  L.push('> （演出＝強調テロップ、並列表記、画像挿入など）');
+  L.push('>');
+  L.push('> **位置だけを機械的に割り出したものです。** 何を入れるかは決めていません。');
+  L.push('> 強調する発言の選定・短い文言・SEの選定は、映像を見て判断してください。');
+  L.push('');
+  L.push('## 適用するルール（案件マニュアル）');
+  L.push('');
+  L.push('- 演出はデザインテロップ・SE・画角変化を**セット**にする');
+  L.push('- 通常テロップのまま画角アップをしない');
+  L.push('- 演出時は見出し・サブ見出し・QRコードを削除する');
+  L.push('- 画角アップが続く場合は30ずつ値を上げる（調整レイヤーにトランスフォーム）');
+  L.push('- トンマナにあるテロップエフェクトとSEの組み合わせ以外を使わない');
+  L.push('- 通常テロップにSEを使わない／強調テロップには必ずSEを使う');
+  L.push('- 強調テロップ時にボタン系SEは使わない（赤枠で囲うときはボタンSE）');
+  L.push(`- 1行${maxChars}文字まで。強調テロップは要点だけの短い文言にする`);
+  L.push('');
+  L.push('## スロット');
+  L.push('');
+  L.push('「強調テロップ案」は空欄です。埋めてから使ってください。');
+  L.push('');
+  L.push('| # | IN | OUT | この区間の発言 | 強調テロップ案 |');
+  L.push('|---|---|---|---|---|');
+  for (const s of slots) {
+    const text = s.cues.map((c) => c.text).join(' ').replace(/\|/g, '\\|');
+    L.push(`| ${s.no} | ${fTC(s.inFrame, rate)} | ${fTC(s.outFrame, rate)} | ${text || '（発言なし）'} |  |`);
+  }
+  writeFileSync(path, L.join('\n'), 'utf8');
+}
+
+function cmdProduce(srtPath, inTC, outTC, outDir, baselinePath, rate, opts) {
+  const conf = opts || {};
+  const maxChars = Number.isFinite(conf.maxChars) ? conf.maxChars : 18;
+  const intervalSec = Number.isFinite(conf.intervalSec) ? conf.intervalSec : 6;
   const inF = tc.timecodeToFrames(inTC, rate);
   const outF = tc.timecodeToFrames(outTC, rate);
   if (!(outF > inF)) throw new Error('範囲が不正です: ' + inTC + ' 〜 ' + outTC);
@@ -384,7 +447,7 @@ function cmdProduce(srtPath, inTC, outTC, outDir, baselinePath, rate) {
     end: telop.secondsToTc(c.endSec),
     text: c.text
   }));
-  const formatted = telop.formatSubtitles(blocks, {});
+  const formatted = telop.formatSubtitles(blocks, { maxChars: maxChars });
   /* snapToFrames は秒を受けてフレーム確定とレイヤー割当を行う */
   const snapped = tc.snapToFrames(
     formatted.map((r) => ({
@@ -411,6 +474,17 @@ function cmdProduce(srtPath, inTC, outTC, outDir, baselinePath, rate) {
   const layered = rows.filter((r) => r.layer > 0).length;
   console.log(`\n  配置 ${rows.length}行 / 上トラック行き ${layered}行（同時発話）`);
   console.log(`  → ${telopPath}`);
+
+  /* --- 工程8: 演出の配置スロット（director） ------------------------ */
+  banner('director', `工程8 演出の配置（${intervalSec}秒に1回）`, '案件マニュアルの基準を適用');
+  const slots = directionSlots(cues, inF, outF, rate, intervalSec);
+  const dirPath = join(outDir, 'direction-plan.md');
+  writeDirectionMd(dirPath, slots, rate, intervalSec, maxChars);
+  const emptySlots = slots.filter((s) => !s.cues.length).length;
+  console.log(`\n  スロット ${slots.length}箇所（${intervalSec}秒ごと）` +
+    (emptySlots ? ` / うち発言なし ${emptySlots}箇所` : ''));
+  console.log('  何を入れるかは決めていません。強調テロップ案は空欄です。');
+  console.log(`  → ${dirPath}`);
 
   /* --- 表記検査（common-manual） ----------------------------------- */
   const snapshot = require(join(ROOT, 'uxp-plugin/data/manual-snapshot.js'));
@@ -528,6 +602,14 @@ function main() {
   const baseline = get('--baseline', join(outDir, 'baseline.json'));
   const inTC = get('--in', null);
   const outTC = get('--out', null);
+  /* 案件マニュアルが共通マニュアルより優先される。
+     CAMPチャンネルは 1行17文字まで／演出は6秒に1回。
+
+     文字数の既定は共通マニュアルの18。案件で上書きするときに --max-chars を渡す。
+     演出間隔の既定は6。共通マニュアルは6と10が衝突していて既定にできる値が無く、
+     案件マニュアルで確定している6を採る。案件が変われば --interval で渡すこと。 */
+  const maxChars = Number(get('--max-chars', '18'));
+  const intervalSec = Number(get('--interval', '6'));
 
   /* フレームレートはシーケンス設定と必ず一致させる。
      29.97 のフレーム番号は 00-29 までなので、それを超える値を含む
@@ -537,7 +619,8 @@ function main() {
   if (cmd === 'analyze' && args[0]) {
     cmdAnalyze(args[0], outDir, rate);
   } else if (cmd === 'produce' && args[0] && inTC && outTC) {
-    cmdProduce(args[0], inTC, outTC, outDir, baseline, rate);
+    cmdProduce(args[0], inTC, outTC, outDir, baseline, rate,
+      { maxChars: maxChars, intervalSec: intervalSec });
   } else {
     console.log('使い方:');
     console.log('  node tools/segment-kit.mjs analyze <srt> [--dir 出力先]');
