@@ -193,6 +193,93 @@ const adapter = {
   },
 
   /**
+   * 演出スロットの位置へマーカーをまとめて打つ。
+   *
+   * === なぜマーカーなのか ===
+   *
+   * 案件マニュアルは「演出は6秒に1回入れる」「演出はデザインテロップ・SE・
+   * 画角変化をセットにする」と定めている。このうちテロップの作成は、
+   * ソーステキストの値をAPIから読めないため今はできない。
+   *
+   * 一方で「どこに演出が要るか」は計算で出せる。
+   * そこを目印として置いておけば、編集者はマーカーを辿って埋めるだけになる。
+   *
+   * マーカーは既存のクリップを一切変更しない。失敗しても消せる。
+   * 書き込み系のAPIが実際に動くかを確かめる最初の一歩としても、いちばん安全。
+   *
+   * @param {{startFrame:number, endFrame:number, intervalSec:number,
+   *          rate:object, label?:string, comment?:string}} opts
+   * @returns {Promise<{ok:boolean, placed:number, message:string}>}
+   */
+  async addDirectionMarkers(opts) {
+    const o = opts || {};
+    const rate = o.rate;
+    if (!rate || !rate.exact) throw new Error('フレームレートが指定されていません。');
+    const step = Math.round(o.intervalSec * rate.exact);
+    if (!(step > 0)) throw new Error('間隔が不正です: ' + o.intervalSec);
+    if (!(o.endFrame > o.startFrame)) throw new Error('範囲が不正です。');
+
+    /* 打つ位置を先に全部決める。途中で計算しない（ずれの原因になる） */
+    const points = [];
+    for (let f = o.startFrame, i = 1; f < o.endFrame; f += step, i++) {
+      points.push({ no: i, frame: f });
+    }
+    const label = o.label || '演出';
+
+    if (!this.isPremiere()) {
+      for (const p of points) {
+        mockState.inserted.push({ marker: `${label}${p.no}`, at: p.frame });
+      }
+      return {
+        ok: true, placed: points.length,
+        message: `［モック］マーカーを${points.length}個 計算しました。実際には打っていません。`
+      };
+    }
+
+    /* --- ここから Premiere API（未検証） --- */
+    const TICKS_PER_SECOND = 254016000000;
+    const project = await ppro.Project.getActiveProject();
+    if (!project) return { ok: false, placed: 0, message: 'プロジェクトが開かれていません' };
+    const seq = await project.getActiveSequence();
+    if (!seq) return { ok: false, placed: 0, message: 'シーケンスが選択されていません' };
+
+    const markers = await ppro.Markers.getMarkers(seq);
+    if (!markers) return { ok: false, placed: 0, message: 'マーカーを取得できませんでした' };
+
+    /* 1つの取り消し単位にまとめる。31個が個別に残ると取り消しが面倒になる。 */
+    let placed = 0;
+    const errors = [];
+    await project.lockedAccess(() => {
+      project.executeTransaction((tx) => {
+        for (const p of points) {
+          try {
+            const ticks = String(Math.round((p.frame / rate.exact) * TICKS_PER_SECOND));
+            const t = ppro.TickTime.createWithTicks(ticks);
+            tx.addAction(markers.createAddMarkerAction(
+              `${label}${p.no}`,
+              o.comment || '',
+              t,
+              ppro.Constants.MarkerType.COMMENT
+            ));
+            placed++;
+          } catch (e) {
+            errors.push(`${label}${p.no}: ${e && e.message ? e.message : String(e)}`);
+          }
+        }
+      }, `編集アシスタント: ${label}マーカー ${points.length}個`);
+    });
+
+    return {
+      ok: placed > 0,
+      placed,
+      message: placed === points.length
+        ? `マーカーを${placed}個 打ちました。取り消しは1回で戻せます。`
+        : `${points.length}個中 ${placed}個を打ちました。\n打てなかったもの:\n- ${errors.join('\n- ')}`
+    };
+    /* --- ここまで Premiere API --- */
+  },
+
+  /**
    * 指定シーケンスの指定トラックにあるテキストレイヤーを調査する。
    *
    * === なぜ「変換」ではなく「調査」なのか ===

@@ -887,6 +887,206 @@ function renderWarnings(host, overs, dictionary, lines) {
 /* タブ4: 音声設定                                                      */
 /* ------------------------------------------------------------------ */
 
+/*
+ * 演出タブ（工程8）。
+ *
+ * やること: 演出が要る位置を計算し、そこへマーカーを打つ。
+ * やらないこと: 何を入れるかを決めること。
+ *
+ * 案件マニュアルは「演出はデザインテロップ・SE・画角変化をセットにする」と
+ * 定めている。このうちテロップの作成は、ソーステキストの値をAPIから
+ * 読めないため今はできない（実機で確認済み）。
+ * できるのは位置出しまでなので、そこで止めて目印を残す。
+ */
+function buildDirectionPanel() {
+  const host = clear(document.getElementById('panel-direction'));
+
+  const note = el('div', 'alert imp');
+  add(note,
+    el('strong', null, '位置だけを出します'),
+    document.createTextNode(
+      '演出が要る位置を計算してマーカーを打ちます。何を入れるか（強調する発言・' +
+      '短い文言・SEの選定）は決めません。テロップの自動作成は、ソーステキストの値を' +
+      'APIから読めないため現時点ではできません。')
+  );
+  host.appendChild(note);
+
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, '演出マーカー'));
+
+  /* 範囲 */
+  const rangeRow = el('div', 'inline');
+  const inLabel = el('label', 'field');
+  add(inLabel, el('span', null, '開始タイムコード'));
+  const inTc = el('input');
+  attr(inTc, { type: 'text', id: 'dir-in', placeholder: '00;03;10;03' });
+  inLabel.appendChild(inTc);
+  const outLabel = el('label', 'field');
+  add(outLabel, el('span', null, '終了タイムコード'));
+  const outTc = el('input');
+  attr(outTc, { type: 'text', id: 'dir-out', placeholder: '00;06;10;52' });
+  outLabel.appendChild(outTc);
+  add(rangeRow, inLabel, outLabel);
+  card.appendChild(rangeRow);
+
+  /* フレームレート */
+  const rateRow = el('div', 'inline');
+  const rateLabel = el('label', 'field');
+  add(rateLabel, el('span', null, 'フレームレート'));
+  const rateSel = el('select');
+  attr(rateSel, { id: 'dir-rate' });
+  for (const k of ['23.976', '24', '25', '29.97', '29.97ND', '30', '50', '59.94', '60']) {
+    const o = el('option', null, TC.RATES[k].label);
+    attr(o, { value: k });
+    rateSel.appendChild(o);
+  }
+  rateSel.value = '29.97';
+  rateLabel.appendChild(rateSel);
+  rateRow.appendChild(rateLabel);
+  const detectBtn = el('button', 'btn btn-sm', 'シーケンスから取得');
+  attr(detectBtn, { type: 'button' });
+  rateRow.appendChild(detectBtn);
+  card.appendChild(rateRow);
+
+  const rateNote = el('p', 'stat');
+  attr(rateNote, { id: 'dir-rate-note' });
+  rateNote.textContent = 'シーケンスと違うfpsで計算するとマーカーの位置がずれます。';
+  card.appendChild(rateNote);
+
+  /* 間隔とラベル */
+  const optRow = el('div', 'inline');
+  const ivLabel = el('label', 'field narrow');
+  add(ivLabel, el('span', null, '間隔（秒）'));
+  const ivIn = el('input');
+  attr(ivIn, { type: 'number', id: 'dir-interval', value: '6', min: '1', max: '60', step: '1' });
+  ivLabel.appendChild(ivIn);
+  const lbLabel = el('label', 'field narrow');
+  add(lbLabel, el('span', null, 'マーカー名'));
+  const lbIn = el('input');
+  attr(lbIn, { type: 'text', id: 'dir-label', value: '演出' });
+  lbLabel.appendChild(lbIn);
+  add(optRow, ivLabel, lbLabel);
+  card.appendChild(optRow);
+
+  const ivNote = el('p', 'stat');
+  ivNote.textContent =
+    '案件マニュアル（CAMPチャンネル）は「演出は6秒に1回」。' +
+    '共通マニュアルは6秒と10秒が衝突しており、案件側が優先されます。';
+  card.appendChild(ivNote);
+
+  /* ボタン */
+  const row = el('div', 'btn-row');
+  const dryBtn = el('button', 'btn btn-primary btn-sm', '位置を計算（打たない）');
+  const runBtn = el('button', 'btn btn-sm', 'マーカーを打つ');
+  for (const b of [dryBtn, runBtn]) attr(b, { type: 'button' });
+  add(row, dryBtn, runBtn);
+  card.appendChild(row);
+
+  const warn = el('p', 'stat');
+  warn.textContent =
+    'マーカーは既存のクリップを変更しません。打った分は1回の取り消しで戻せます。';
+  card.appendChild(warn);
+
+  const out = el('div', 'output');
+  attr(out, { id: 'dir-out-log' });
+  card.appendChild(out);
+
+  host.appendChild(card);
+
+  /* --- ルールの控え --- */
+  const ruleCard = el('div', 'card');
+  ruleCard.appendChild(el('h2', null, '演出のルール（案件マニュアル）'));
+  ruleCard.appendChild(list([
+    '演出はデザインテロップ・SE・画角変化をセットにする',
+    '通常テロップのまま画角アップをしない',
+    '演出時は見出し・サブ見出し・QRコードを削除する',
+    '画角アップが続く場合は30ずつ値を上げる（調整レイヤーにトランスフォーム）',
+    'トンマナにあるテロップエフェクトとSEの組み合わせ以外を使わない',
+    '通常テロップにSEを使わない／強調テロップには必ずSEを使う',
+    '強調テロップ時にボタン系SEは使わない（赤枠で囲うときはボタンSE）',
+    '強調テロップは要点だけの短い文言にする'
+  ]));
+  host.appendChild(ruleCard);
+
+  /* --- 処理 --- */
+
+  const rateOf = () => TC.RATES[rateSel.value] || TC.RATES['29.97'];
+
+  function slots() {
+    const rate = rateOf();
+    const startFrame = TC.timecodeToFrames(inTc.value.trim(), rate);
+    const endFrame = TC.timecodeToFrames(outTc.value.trim(), rate);
+    if (!(endFrame > startFrame)) throw new Error('範囲が不正です。開始より後の終了を入れてください。');
+    const iv = Number(ivIn.value) || 6;
+    const step = Math.round(iv * rate.exact);
+    const points = [];
+    for (let f = startFrame, i = 1; f < endFrame; f += step, i++) {
+      points.push({ no: i, frame: f, tc: TC.framesToTimecode(f, rate) });
+    }
+    return { rate, startFrame, endFrame, iv, points };
+  }
+
+  detectBtn.addEventListener('click', async () => {
+    try {
+      const info = await adapter.getSequenceFrameRate();
+      if (!info) { rateNote.textContent = 'シーケンスから取得できませんでした。手で選んでください。'; return; }
+      const resolved = TC.resolveRate(info.fps, info.dropFrame);
+      const key = Object.keys(TC.RATES).find((k) => TC.RATES[k].label === resolved.label);
+      if (key) rateSel.value = key;
+      rateNote.textContent = `シーケンスから取得: ${resolved.label}`;
+    } catch (e) {
+      rateNote.textContent = '取得に失敗しました: ' + (e && e.message ? e.message : String(e));
+    }
+  });
+
+  dryBtn.addEventListener('click', () => {
+    try {
+      const s = slots();
+      const lines = [
+        `${s.points.length}箇所（${s.iv}秒ごと / ${rateOf().label}）`,
+        '',
+        ...s.points.map((p) => `${lbIn.value || '演出'}${p.no}\t${p.tc}`)
+      ];
+      out.textContent = lines.join('\n');
+      toast(`${s.points.length}箇所を計算しました`);
+    } catch (e) {
+      out.textContent = 'エラー: ' + (e && e.message ? e.message : String(e));
+      toast('計算できませんでした');
+    }
+  });
+
+  runBtn.addEventListener('click', async () => {
+    let s;
+    try {
+      s = slots();
+    } catch (e) {
+      out.textContent = 'エラー: ' + (e && e.message ? e.message : String(e));
+      toast('計算できませんでした');
+      return;
+    }
+    runBtn.disabled = true;
+    runBtn.textContent = '打っています…';
+    try {
+      const r = await adapter.addDirectionMarkers({
+        startFrame: s.startFrame,
+        endFrame: s.endFrame,
+        intervalSec: s.iv,
+        rate: s.rate,
+        label: lbIn.value || '演出',
+        comment: '案件マニュアル: 演出はデザインテロップ・SE・画角変化をセット'
+      });
+      out.textContent = r.message;
+      toast(r.ok ? `マーカー ${r.placed}個` : '打てませんでした');
+    } catch (e) {
+      out.textContent = '失敗しました: ' + (e && e.message ? e.message : String(e));
+      toast('失敗しました');
+    } finally {
+      runBtn.disabled = false;
+      runBtn.textContent = 'マーカーを打つ';
+    }
+  });
+}
+
 function buildAudioPanel() {
   const host = clear(document.getElementById('panel-audio'));
 
@@ -1140,7 +1340,7 @@ function buildCutPanel() {
 /* タブ制御                                                             */
 /* ------------------------------------------------------------------ */
 
-const TABS = ['material', 'submit', 'telop', 'audio', 'cut'];
+const TABS = ['material', 'submit', 'telop', 'direction', 'audio', 'cut'];
 
 function selectTab(id) {
   TABS.forEach((t) => {
@@ -1209,6 +1409,7 @@ async function init() {
   buildMaterialPanel();
   buildSubmitPanel();
   buildTelopPanel();
+  buildDirectionPanel();
   buildAudioPanel();
   buildCutPanel();
   selectTab('material');
