@@ -92,6 +92,7 @@ UXP の API はバージョンによって差異があるため、初回起動�
 | `insertTelops()` | テロップの一括配置（MOGRT / SRT） |
 | `inspectTextLayers()` | 既存テロップの調査（読み取りのみ。変更しない） |
 | `addDirectionMarkers()` | 演出スロットへマーカーを一括で打つ |
+| `listTrackItems()` | 指定範囲のクリップ名とタイムコードを書き出す（読み取りのみ） |
 
 ### `inspectTextLayers()` について
 

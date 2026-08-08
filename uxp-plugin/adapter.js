@@ -373,6 +373,106 @@ const adapter = {
   },
 
   /**
+   * 指定範囲のクリップ名とタイムコードを書き出す。
+   *
+   * === 何のためか ===
+   *
+   * テロップの本文は、ソーステキストの値としては読めない（実機で確認済み）。
+   * ところがCAMPチャンネルのシーケンスでは、テロップのクリップ名に
+   * 本文がそのまま入っている。クリップ名は getName() で読める。
+   *
+   * つまり「テキストは読めないが、テロップの中身は分かる」。
+   * 演出の文言を考えるには、その位置で何を言っているかが要る。
+   * 文字起こしが無くても、ここから材料を取れる。
+   *
+   * 読み取りのみ。何も変更しない。
+   *
+   * @param {{trackIndex:number, startFrame:number, endFrame:number,
+   *          rate:object, sequenceName?:string}} opts
+   * @returns {Promise<{ok:boolean, items:Array, text:string, note:string}>}
+   */
+  async listTrackItems(opts) {
+    const o = opts || {};
+    const rate = o.rate;
+    if (!rate || !rate.exact) throw new Error('フレームレートが指定されていません。');
+    const trackIndex = Number.isFinite(o.trackIndex) ? o.trackIndex : 3;
+
+    if (!this.isPremiere()) {
+      return {
+        ok: false, items: [], text: '',
+        note: 'モック環境では書き出せません。Premiere内で実行してください。'
+      };
+    }
+
+    /* --- ここから Premiere API（未検証） --- */
+    const TICKS_PER_SECOND = 254016000000;
+    const project = await ppro.Project.getActiveProject();
+    if (!project) throw new Error('プロジェクトが開かれていません。');
+    const seq = await project.getActiveSequence();
+    if (!seq) throw new Error('シーケンスが選択されていません。');
+
+    /* 時刻の返り方が版で違う。ticks / seconds / 数値のどれでも受ける。 */
+    const toFrame = (t) => {
+      if (t === null || t === undefined) return null;
+      const raw = (typeof t === 'object')
+        ? (t.ticks ?? t.seconds ?? t.value ?? null)
+        : t;
+      const n = Number(raw);
+      if (!isFinite(n)) return null;
+      /* ticks は桁が大きい。秒なら小さい。 */
+      const sec = n > 100000 ? n / TICKS_PER_SECOND : n;
+      return Math.round(sec * rate.exact);
+    };
+
+    const track = await seq.getVideoTrack(trackIndex - 1);
+    if (!track) throw new Error(`V${trackIndex} が存在しません。`);
+
+    const TT = (ppro.Constants && ppro.Constants.TrackItemType) || {};
+    let raw = [];
+    try {
+      raw = await track.getTrackItems(TT.CLIP !== undefined ? TT.CLIP : 1, false);
+    } catch (e) {
+      raw = await track.getTrackItems();
+    }
+    raw = Array.isArray(raw) ? raw : [];
+
+    const items = [];
+    const problems = [];
+    for (const it of raw) {
+      let name = '';
+      try { name = String(await it.getName()); } catch (e) { name = ''; }
+      let inF = null, outF = null;
+      try { inF = toFrame(await it.getStartTime()); } catch (e) { /* 下で弾く */ }
+      try { outF = toFrame(await it.getEndTime()); } catch (e) { /* 下で弾く */ }
+      if (inF === null || outF === null) {
+        problems.push(name || '(名前不明)');
+        continue;
+      }
+      /* 指定範囲にかかるものだけ */
+      if (Number.isFinite(o.startFrame) && Number.isFinite(o.endFrame)) {
+        if (!(inF < o.endFrame && outF > o.startFrame)) continue;
+      }
+      items.push({ name, inFrame: inF, outFrame: outF });
+    }
+
+    items.sort((a, b) => a.inFrame - b.inFrame);
+
+    /* 貼り付けて使える形にする。SRT に寄せておくと、
+       この場でそのまま演出タブの文字起こし欄へ戻せる。 */
+    const lines = items.map((x, i) =>
+      `${i + 1}\n${framesToSrt(x.inFrame, rate)} --> ${framesToSrt(x.outFrame, rate)}\n${x.name}\n`);
+
+    return {
+      ok: items.length > 0,
+      items,
+      text: lines.join('\n'),
+      note: `V${trackIndex} から ${items.length}件` +
+            (problems.length ? ` / 時刻を読めなかったもの ${problems.length}件` : '')
+    };
+    /* --- ここまで Premiere API --- */
+  },
+
+  /**
    * 指定シーケンスの指定トラックにあるテキストレイヤーを調査する。
    *
    * === なぜ「変換」ではなく「調査」なのか ===
@@ -1129,6 +1229,21 @@ function formatSeconds(sec) {
   const h = Math.floor(sec / 3600);
   const p = (n) => String(n).padStart(2, '0');
   return `${p(h)};${p(m)};${p(s)};${p(f)}`;
+}
+
+/*
+ * フレーム番号を SRT の時刻へ。
+ * 書き出したものをそのまま文字起こし欄へ戻せるようにするため、
+ * ドロップフレームの記法ではなくミリ秒表記にする。
+ */
+function framesToSrt(frame, rate) {
+  const sec = frame / rate.exact;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor(sec / 60) % 60;
+  const s = Math.floor(sec) % 60;
+  const ms = Math.round((sec - Math.floor(sec)) * 1000);
+  const p = (n, w = 2) => String(n).padStart(w, '0');
+  return `${p(h)}:${p(m)}:${p(s)},${p(ms, 3)}`;
 }
 
   return adapter;

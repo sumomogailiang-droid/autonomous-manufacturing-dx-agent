@@ -1019,6 +1019,32 @@ function buildDirectionPanel() {
   srcLabel.appendChild(srcIn);
   card.appendChild(srcLabel);
 
+  /*
+   * テロップの本文はソーステキストの値としては読めないが、
+   * クリップ名には入っている（CAMPチャンネルのシーケンスの場合）。
+   * 文字起こしが手元に無くても、ここから材料を取れる。
+   */
+  const pullRow = el('div', 'btn-row');
+  const pullSel = el('select');
+  attr(pullSel, { id: 'dir-pull-track' });
+  for (let v = 1; v <= 8; v++) {
+    const o = el('option', null, 'V' + v);
+    attr(o, { value: String(v) });
+    if (v === 3) attr(o, { selected: 'selected' });
+    pullSel.appendChild(o);
+  }
+  const pullBtn = el('button', 'btn btn-sm', 'クリップ名から取り込む');
+  const pullCopy = el('button', 'btn btn-sm', '取り込んだ内容をコピー');
+  for (const b of [pullBtn, pullCopy]) attr(b, { type: 'button' });
+  add(pullRow, pullSel, pullBtn, pullCopy);
+  card.appendChild(pullRow);
+
+  const pullNote = el('p', 'stat');
+  pullNote.textContent =
+    '既存テロップのクリップ名を上の欄へ読み込みます（読み取りのみ。何も変更しません）。' +
+    '文字起こしが無いときの代わりに使えます。';
+  card.appendChild(pullNote);
+
   /* ボタン */
   const row = el('div', 'btn-row');
   const dryBtn = el('button', 'btn btn-primary btn-sm', '位置を計算（打たない）');
@@ -1150,6 +1176,43 @@ function buildDirectionPanel() {
   }
   grabIn.addEventListener('click', () => grabPlayhead(inTc));
   grabOut.addEventListener('click', () => grabPlayhead(outTc));
+
+  pullBtn.addEventListener('click', async () => {
+    const rate = rateOf();
+    const rawIn = inTc.value.trim();
+    const rawOut = outTc.value.trim();
+    if (!rawIn || !rawOut) {
+      showError('先に開始と終了のタイムコードを入れてください。範囲を絞らないと全部が入ります。');
+      return;
+    }
+    pullBtn.disabled = true;
+    pullBtn.textContent = '取り込み中…';
+    try {
+      const r = await adapter.listTrackItems({
+        trackIndex: Number(pullSel.value),
+        startFrame: TC.timecodeToFrames(rawIn, rate),
+        endFrame: TC.timecodeToFrames(rawOut, rate),
+        rate
+      });
+      if (!r.ok) { showError(r.note || '取り込めませんでした。'); return; }
+      srcIn.value = r.text;
+      clearError();
+      out.textContent = r.note + '\n\n' + r.text;
+      toast(r.note);
+    } catch (e) {
+      showError('取り込みに失敗しました: ' + (e && e.message ? e.message : String(e)));
+    } finally {
+      pullBtn.disabled = false;
+      pullBtn.textContent = 'クリップ名から取り込む';
+    }
+  });
+
+  pullCopy.addEventListener('click', async () => {
+    if (!srcIn.value.trim()) { toast('先に取り込んでください'); return; }
+    try { srcIn.focus(); srcIn.select(); } catch (e) { /* 選択できなくても続ける */ }
+    const r = await adapter.copyToClipboard(srcIn.value);
+    toast(r && r.ok ? 'コピーしました' : '全選択しました。⌘Cでコピーしてください');
+  });
 
   dryBtn.addEventListener('click', () => {
     try {
