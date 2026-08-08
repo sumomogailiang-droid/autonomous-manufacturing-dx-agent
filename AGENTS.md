@@ -211,6 +211,7 @@ node video-manual-visualizer/validate-data.js   # データ検証
 node agents/test-mcp.mjs                        # MCP疎通テスト
 node tools/test-timecode.mjs                    # フレーム計算の検証
 node tools/test-telop.mjs                       # テロップ整形（改行位置）の検証
+node tools/test-premiere-bridge.mjs             # ブリッジ経由のPremiere操作の検証
 node agents/governance.mjs                      # CTOによる全体監査（GO / NO-GO）
 
 # 体制の確認・操作
@@ -255,3 +256,36 @@ args = ["agents/mcp-server.mjs"]
 ### Claude Code
 
 リポジトリ直下の `.mcp.json` が自動で読まれます。設定不要です。
+
+### Premiere Pro を操作する（ブリッジ経由）
+
+`tools/premiere-bridge-mcp.mjs` は、CEP拡張「MCP Bridge (CEP)」を経由して
+Premiere Pro を操作するMCPサーバーです。ExtendScript を実行します。
+
+**★ Premiere と同じマシンで動かしてください。**
+やり取りは共有フォルダへのファイルの読み書きで行うため、
+クラウド側のセッションから動かしても、そのフォルダは別のマシンのものになります。
+
+```bash
+# 1. Premiere で「MCP Bridge (CEP)」パネルを開き、Start Bridge を押す
+# 2. 疎通確認
+node tools/premiere-bridge-mcp.mjs --check
+# 3. Claude Code へ登録（そのマシンだけの設定にする）
+claude mcp add premiere --scope local -- node "$(pwd)/tools/premiere-bridge-mcp.mjs"
+```
+
+**`.mcp.json` へ書かないでください。** リポジトリ経由でクラウド側にも共有され、
+そちらでは共有フォルダが存在しないため必ず失敗します。
+
+| ツール | 用途 |
+|---|---|
+| `premiere_status` | 疎通確認。アプリ版・プロジェクト名・作業中シーケンス |
+| `premiere_list_sequences` | シーケンス一覧 |
+| `premiere_duplicate_sequence` | シーケンスの複製（元は変更しない） |
+| `premiere_list_clips` | 指定トラックのクリップ名と時刻（読み取りのみ） |
+| `premiere_add_markers` | マーカーの一括追加 |
+| `premiere_eval` | 任意のExtendScript実行（逃げ道） |
+
+パネル側は `eval(` `new Function(` `require(` `__dirname` `__filename`
+`process.` `child_process` を含むスクリプトを実行前に弾きます。
+サーバー側でも同じ検査をしてから送るので、弾かれる場合は送信前に理由が出ます。
