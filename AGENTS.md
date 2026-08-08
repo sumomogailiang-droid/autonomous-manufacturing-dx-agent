@@ -211,7 +211,6 @@ node video-manual-visualizer/validate-data.js   # データ検証
 node agents/test-mcp.mjs                        # MCP疎通テスト
 node tools/test-timecode.mjs                    # フレーム計算の検証
 node tools/test-telop.mjs                       # テロップ整形（改行位置）の検証
-node tools/test-premiere-bridge.mjs             # ブリッジ経由のPremiere操作の検証
 node agents/governance.mjs                      # CTOによる全体監査（GO / NO-GO）
 
 # 体制の確認・操作
@@ -257,35 +256,38 @@ args = ["agents/mcp-server.mjs"]
 
 リポジトリ直下の `.mcp.json` が自動で読まれます。設定不要です。
 
-### Premiere Pro を操作する（ブリッジ経由）
+### Premiere Pro を操作する
 
-`tools/premiere-bridge-mcp.mjs` は、CEP拡張「MCP Bridge (CEP)」を経由して
-Premiere Pro を操作するMCPサーバーです。ExtendScript を実行します。
+`hetpatel-11/Adobe_Premiere_Pro_MCP` を使います。**自前で書かないでください。**
 
-**★ Premiere と同じマシンで動かしてください。**
-やり取りは共有フォルダへのファイルの読み書きで行うため、
-クラウド側のセッションから動かしても、そのフォルダは別のマシンのものになります。
+CEP拡張「MCP Bridge (CEP)」はこのプロジェクトに同梱されているものです。
+ブリッジだけを見て別のクライアントを書くと、同じブリッジを2つのサーバーが
+取り合うことになります（一度そうしかけたので、ここに残しておきます）。
 
 ```bash
-# 1. Premiere で「MCP Bridge (CEP)」パネルを開き、Start Bridge を押す
-# 2. 疎通確認
-node tools/premiere-bridge-mcp.mjs --check
-# 3. Claude Code へ登録（そのマシンだけの設定にする）
-claude mcp add premiere --scope local -- node "$(pwd)/tools/premiere-bridge-mcp.mjs"
+# Premiere で ウィンドウ > 機能拡張 > MCP Bridge (CEP) を開き、Start Bridge を押す
+# 共有フォルダが /tmp/premiere-mcp-bridge であることを確認する
+claude mcp add premiere-pro -- node <Adobe_Premiere_Pro_MCPのパス>/dist/index.js
 ```
 
-**`.mcp.json` へ書かないでください。** リポジトリ経由でクラウド側にも共有され、
-そちらでは共有フォルダが存在しないため必ず失敗します。
+104ツールが公開されています。演出工程で使うもの:
 
-| ツール | 用途 |
+| 目的 | ツール |
 |---|---|
-| `premiere_status` | 疎通確認。アプリ版・プロジェクト名・作業中シーケンス |
-| `premiere_list_sequences` | シーケンス一覧 |
-| `premiere_duplicate_sequence` | シーケンスの複製（元は変更しない） |
-| `premiere_list_clips` | 指定トラックのクリップ名と時刻（読み取りのみ） |
-| `premiere_add_markers` | マーカーの一括追加 |
-| `premiere_eval` | 任意のExtendScript実行（逃げ道） |
+| 作業用コピーを作る | `duplicate_sequence` |
+| 演出位置の目印 | `add_marker` / `list_markers` |
+| テロップの本文を読む | `read_sequence_captions` / `get_clip_properties` |
+| 強調テロップを置く | `import_mogrt`（トンマナのテンプレート） |
+| 画角変化 | `apply_effect` + `add_keyframe` |
+| SE・BGMの配置と音量 | `add_to_timeline` / `adjust_audio_levels` |
 
-パネル側は `eval(` `new Function(` `require(` `__dirname` `__filename`
-`process.` `child_process` を含むスクリプトを実行前に弾きます。
-サーバー側でも同じ検査をしてから送るので、弾かれる場合は送信前に理由が出ます。
+**注意（KNOWN_ISSUES.md より）:**
+
+- 104ツール中、実機で動作確認済みは43件。残りは形だけの検証
+- CEPパネルを開いて Start Bridge を押していないと、設定が正しくても届かない
+- 「polished title design still depends on real MOGRT packages」。
+  `add_text_overlay` で作った素のテキストは、案件マニュアルの絶対NG
+  「トンマナにないテロップデザインを使用する」に該当する。
+  強調テロップは必ず `import_mogrt` でトンマナのテンプレートから置くこと
+- `remove_effect` は存在しない。エフェクトは足せるが外せない
+- 本番プロジェクトで試さない。`duplicate_sequence` でコピーしてから触ること
